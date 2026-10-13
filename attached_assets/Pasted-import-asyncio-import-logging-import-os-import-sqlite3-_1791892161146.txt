@@ -1,0 +1,338 @@
+import asyncio
+import logging
+import os
+import sqlite3
+from contextlib import closing
+from datetime import date
+
+import aiohttp
+from aiogram import Bot, Dispatcher, F
+from aiogram.exceptions import TelegramForbiddenError
+from aiogram.filters import Command, CommandStart
+from aiogram.types import CallbackQuery, InlineKeyboardButton, Message
+from aiogram.utils.keyboard import InlineKeyboardBuilder
+from dotenv import load_dotenv
+
+load_dotenv()
+
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+TP_TOKEN = os.getenv("TRAVELPAYOUTS_TOKEN")
+MARKER = os.getenv("TRAVELPAYOUTS_MARKER", "")
+
+API_URL = "https://api.travelpayouts.com/aviasales/v3/prices_for_dates"
+SITE = "https://www.aviasales.com"
+
+DB_PATH = os.getenv("DB_PATH", "bot.db")
+CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL", "3600"))  # как часто проверять цены (секунды)
+MAX_ALERTS = 5  # максимум оповещений на одного пользователя
+DEFAULT_LANG = "uz"
+
+logging.basicConfig(level=logging.INFO)
+dp = Dispatcher()
+
+# ---------- Города: коды IATA и названия на двух языках ----------
+ORIGIN_CODES = ["TAS", "SKD", "BHK", "FEG", "NMA", "AZN", "UGC", "NCU", "TMJ", "KSQ"]
+DEST_CODES = ["MOW", "LED", "IST", "DXB", "ALA", "DEL", "JED", "KUL", "BKK", "SEL", "BAK", "TBS"]
+
+CITY = {
+    "ru": {
+        "TAS": "Ташкент", "SKD": "Самарканд", "BHK": "Бухара", "FEG": "Фергана",
+        "NMA": "Наманган", "AZN": "Андижан", "UGC": "Ургенч", "NCU": "Нукус",
+        "TMJ": "Термез", "KSQ": "Карши",
+        "MOW": "Москва", "LED": "Санкт-Петербург", "IST": "Стамбул", "DXB": "Дубай",
+        "ALA": "Алматы", "DEL": "Дели", "JED": "Джидда", "KUL": "Куала-Лумпур",
+        "BKK": "Бангкок", "SEL": "Сеул", "BAK": "Баку", "TBS": "Тбилиси",
+    },
+    "uz": {
+        "TAS": "Toshkent", "SKD": "Samarqand", "BHK": "Buxoro", "FEG": "Farg'ona",
+        "NMA": "Namangan", "AZN": "Andijon", "UGC": "Urganch", "NCU": "Nukus",
+        "TMJ": "Termiz", "KSQ": "Qarshi",
+        "MOW": "Moskva", "LED": "Sankt-Peterburg", "IST": "Istanbul", "DXB": "Dubay",
+        "ALA": "Almati", "DEL": "Dehli", "JED": "Jidda", "KUL": "Kuala-Lumpur",
+        "BKK": "Bangkok", "SEL": "Seul", "BAK": "Boku", "TBS": "Tbilisi",
+    },
+}
+
+MONTHS = {
+    "ru": [
+        "", "январь", "февраль", "март", "апрель", "май", "июнь",
+        "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь",
+    ],
+    "uz": [
+        "", "yanvar", "fevral", "mart", "aprel", "may", "iyun",
+        "iyul", "avgust", "sentyabr", "oktyabr", "noyabr", "dekabr",
+    ],
+}
+
+# ---------- Тексты бота на двух языках ----------
+TEXTS = {
+    "ru": {
+        "help": (
+            "✈️ Бот поиска дешёвых авиабилетов\n\n"
+            "Нажмите «Найти билет» и выберите город вылета, направление и месяц. "
+            "После результатов можно включить 🔔 оповещение: бот сам напишет, когда цена упадёт.\n\n"
+            "Команды вручную:\n"
+            "/price TAS IST 2026-11-15  (на день)\n"
+            "/price TAS IST 2026-12     (на месяц)\n"
+            "/alerts  (мои оповещения)\n"
+            "/lang  (сменить язык)"
+        ),
+        "btn_find": "✈️ Найти билет",
+        "btn_alerts": "🔔 Мои оповещения",
+        "btn_lang": "🌐 Til / Язык",
+        "btn_back": "⬅️ Назад",
+        "btn_new": "🔁 Новый поиск",
+        "btn_watch": "🔔 Следить за ценой",
+        "ask_origin": "Откуда летите? Выберите город вылета:",
+        "ask_dest": "Вылет: {o}\nКуда летите?",
+        "ask_month": "{o} → {d}\nВыберите месяц вылета:",
+        "searching": "🔎 Ищу билеты...",
+        "route_title": "✈️ {o} → {d}: самые дешёвые варианты\n",
+        "direct": "прямой",
+        "stops": "пересадок: {n}",
+        "footer": "Цены из кэша поисков, итоговую цену смотрите на сайте.",
+        "not_found": (
+            "Билетов не найдено. Данные берутся из кэша поисков, поэтому для редких "
+            "направлений или дат он может быть пустым. Попробуйте другой месяц или направление."
+        ),
+        "api_fail": "⚠️ Не удалось получить данные. Попробуйте позже.",
+        "watch_exists": "🔔 Это направление уже отслеживается: {route}\nСписок: /alerts",
+        "watch_limit": "Достигнут лимит: {max} оповещений. Удалите ненужное в /alerts.",
+        "watch_none": "Сейчас нет цен для этого направления, следить не получится.",
+        "watch_ok": (
+            "🔔 Слежу за ценой: {route}\n"
+            "Сейчас от {price} USD. Напишу, если подешевеет.\n"
+            "Все оповещения: /alerts"
+        ),
+        "alerts_empty": (
+            "У вас пока нет оповещений.\n"
+            "Сделайте поиск и нажмите «🔔 Следить за ценой» под результатами."
+        ),
+        "alerts_title": "🔔 Ваши оповещения.\nНажмите на оповещение, чтобы удалить его:",
+        "alert_item": "❌ {o} → {d}, {period} (от {price})",
+        "deleted": "Удалено",
+        "dropped": "🔔 Цена упала: {old} → {new} USD\n\n",
+        "lang_prompt": "🌐 Tilni tanlang / Выберите язык:",
+    },
+    "uz": {
+        "help": (
+            "✈️ Arzon aviachiptalar qidiruv boti\n\n"
+            "«Chipta topish» tugmasini bosing va uchish shahri, yo'nalish hamda oyni tanlang. "
+            "Natijalardan keyin 🔔 xabarnomani yoqishingiz mumkin: narx tushsa, bot o'zi yozadi.\n\n"
+            "Buyruqlar:\n"
+            "/price TAS IST 2026-11-15  (aniq kun uchun)\n"
+            "/price TAS IST 2026-12     (butun oy uchun)\n"
+            "/alerts  (xabarnomalarim)\n"
+            "/lang  (tilni almashtirish)"
+        ),
+        "btn_find": "✈️ Chipta topish",
+        "btn_alerts": "🔔 Xabarnomalarim",
+        "btn_lang": "🌐 Til / Язык",
+        "btn_back": "⬅️ Orqaga",
+        "btn_new": "🔁 Yangi qidiruv",
+        "btn_watch": "🔔 Narxni kuzatish",
+        "ask_origin": "Qayerdan uchasiz? Uchish shahrini tanlang:",
+        "ask_dest": "Uchish: {o}\nQayerga uchasiz?",
+        "ask_month": "{o} → {d}\nUchish oyini tanlang:",
+        "searching": "🔎 Chiptalar qidirilmoqda...",
+        "route_title": "✈️ {o} → {d}: eng arzon variantlar\n",
+        "direct": "to'g'ridan-to'g'ri",
+        "stops": "almashinuvlar: {n}",
+        "footer": "Narxlar qidiruv keshidan olingan, yakuniy narxni saytda ko'ring.",
+        "not_found": (
+            "Chiptalar topilmadi. Ma'lumotlar qidiruv keshidan olinadi, shuning uchun kam "
+            "uchraydigan yo'nalish yoki sanalar uchun u bo'sh bo'lishi mumkin. "
+            "Boshqa oy yoki yo'nalishni sinab ko'ring."
+        ),
+        "api_fail": "⚠️ Ma'lumotlarni olib bo'lmadi. Keyinroq urinib ko'ring.",
+        "watch_exists": "🔔 Bu yo'nalish allaqachon kuzatilmoqda: {route}\nRo'yxat: /alerts",
+        "watch_limit": "Limitga yetdingiz: {max} ta xabarnoma. Keraksizini /alerts orqali o'chiring.",
+        "watch_none": "Hozir bu yo'nalish uchun narxlar yo'q, kuzatib bo'lmaydi.",
+        "watch_ok": (
+            "🔔 Narx kuzatilmoqda: {route}\n"
+            "Hozir {price} USD dan. Arzonlashsa, yozaman.\n"
+            "Barcha xabarnomalar: /alerts"
+        ),
+        "alerts_empty": (
+            "Hozircha xabarnomalar yo'q.\n"
+            "Qidiruv qiling va natijalar ostidagi «🔔 Narxni kuzatish» tugmasini bosing."
+        ),
+        "alerts_title": "🔔 Xabarnomalaringiz.\nO'chirish uchun xabarnomani bosing:",
+        "alert_item": "❌ {o} → {d}, {period} ({price} dan)",
+        "deleted": "O'chirildi",
+        "dropped": "🔔 Narx tushdi: {old} → {new} USD\n\n",
+        "lang_prompt": "🌐 Tilni tanlang / Выберите язык:",
+    },
+}
+
+
+def t(lang, key, **kw):
+    text = TEXTS[lang][key]
+    return text.format(**kw) if kw else text
+
+
+def city(code, lang):
+    return CITY[lang].get(code, code)
+
+
+# ---------- База данных (SQLite) ----------
+def db_exec(sql, params=()):
+    with closing(sqlite3.connect(DB_PATH)) as conn:
+        cur = conn.execute(sql, params)
+        conn.commit()
+        return cur.rowcount
+
+
+def db_all(sql, params=()):
+    with closing(sqlite3.connect(DB_PATH)) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(sql, params).fetchall()
+        return [dict(r) for r in rows]
+
+
+def init_db():
+    db_exec(
+        """CREATE TABLE IF NOT EXISTS alerts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            origin TEXT NOT NULL,
+            dest TEXT NOT NULL,
+            period TEXT NOT NULL,
+            last_price REAL,
+            UNIQUE(user_id, origin, dest, period)
+        )"""
+    )
+    db_exec(
+        """CREATE TABLE IF NOT EXISTS users (
+            user_id INTEGER PRIMARY KEY,
+            lang TEXT NOT NULL
+        )"""
+    )
+
+
+def get_lang(user_id):
+    """Язык пользователя или None, если ещё не выбирал."""
+    rows = db_all("SELECT lang FROM users WHERE user_id=?", (user_id,))
+    if rows and rows[0]["lang"] in TEXTS:
+        return rows[0]["lang"]
+    return None
+
+
+def lang_of(user_id):
+    return get_lang(user_id) or DEFAULT_LANG
+
+
+def set_lang(user_id, lang):
+    db_exec("INSERT OR REPLACE INTO users (user_id, lang) VALUES (?, ?)", (user_id, lang))
+
+
+# ---------- Клавиатуры ----------
+def kb_lang():
+    b = InlineKeyboardBuilder()
+    b.button(text="🇺🇿 O'zbekcha", callback_data="lang:uz")
+    b.button(text="🇷🇺 Русский", callback_data="lang:ru")
+    b.adjust(2)
+    return b.as_markup()
+
+
+def kb_start(lang):
+    b = InlineKeyboardBuilder()
+    b.button(text=t(lang, "btn_find"), callback_data="go")
+    b.button(text=t(lang, "btn_alerts"), callback_data="alerts")
+    b.button(text=t(lang, "btn_lang"), callback_data="lang_menu")
+    b.adjust(1)
+    return b.as_markup()
+
+
+def kb_origins(lang):
+    b = InlineKeyboardBuilder()
+    for code in ORIGIN_CODES:
+        b.button(text=city(code, lang), callback_data=f"o:{code}")
+    b.adjust(2)
+    return b.as_markup()
+
+
+def kb_dests(origin, lang):
+    b = InlineKeyboardBuilder()
+    for code in DEST_CODES:
+        if code != origin:
+            b.button(text=city(code, lang), callback_data=f"d:{origin}:{code}")
+    b.adjust(2)
+    b.row(InlineKeyboardButton(text=t(lang, "btn_back"), callback_data="go"))
+    return b.as_markup()
+
+
+def next_months(count=6):
+    today = date.today()
+    year, month = today.year, today.month
+    result = []
+    for _ in range(count):
+        result.append((year, month))
+        month += 1
+        if month > 12:
+            month = 1
+            year += 1
+    return result
+
+
+def kb_months(origin, dest, lang):
+    b = InlineKeyboardBuilder()
+    for year, month in next_months():
+        label = f"{MONTHS[lang][month].capitalize()} {year}"
+        b.button(text=label, callback_data=f"m:{origin}:{dest}:{year}-{month:02d}")
+    b.adjust(2)
+    b.row(InlineKeyboardButton(text=t(lang, "btn_back"), callback_data=f"o:{origin}"))
+    return b.as_markup()
+
+
+def kb_again(lang):
+    b = InlineKeyboardBuilder()
+    b.button(text=t(lang, "btn_new"), callback_data="go")
+    b.button(text=t(lang, "btn_alerts"), callback_data="alerts")
+    b.adjust(1)
+    return b.as_markup()
+
+
+def kb_results(origin, dest, period, lang):
+    b = InlineKeyboardBuilder()
+    b.button(text=t(lang, "btn_watch"), callback_data=f"w:{origin}:{dest}:{period}")
+    b.button(text=t(lang, "btn_new"), callback_data="go")
+    b.adjust(1)
+    return b.as_markup()
+
+
+def alerts_view(user_id, lang):
+    rows = db_all("SELECT * FROM alerts WHERE user_id=? ORDER BY id", (user_id,))
+    if not rows:
+        return t(lang, "alerts_empty"), kb_again(lang)
+    b = InlineKeyboardBuilder()
+    for r in rows:
+        price = f"{r['last_price']:.0f}$" if r["last_price"] is not None else "—"
+        label = t(
+            lang, "alert_item",
+            o=city(r["origin"], lang), d=city(r["dest"], lang), period=r["period"], price=price,
+        )
+        b.button(text=label, callback_data=f"x:{r['id']}")
+    b.adjust(1)
+    b.row(InlineKeyboardButton(text=t(lang, "btn_new"), callback_data="go"))
+    return t(lang, "alerts_title"), b.as_markup()
+
+
+# ---------- Поиск билетов ----------
+async def fetch_tickets(origin, destination, period, limit=5):
+    """Возвращает список билетов или None при ошибке."""
+    params = {
+        "origin": origin,
+        "destination": destination,
+        "departure_at": period,
+        "one_way": "true",
+        "sorting": "price",
+        "currency": "usd",
+        "limit": limit,
+        "unique": "false",
+    }
+    headers = {"X-Access-Token": TP_TOKEN}
+    try:
+        timeout = aiohttp.ClientTimeout(total=20)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(API_URL, params=params, headers=headers) as
