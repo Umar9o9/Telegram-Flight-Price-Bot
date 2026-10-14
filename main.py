@@ -113,8 +113,8 @@ TEXTS = {
         "help": (
             "✈️ <b>Международный поиск авиабилетов</b>\n\n"
             "• Рейсы в одну сторону и <b>Туда-обратно</b>.\n"
-            "• Прямые ссылки на агентства: <b>GoToGate, OneTwoTrip, Aviasales, Skyscanner</b>.\n"
-            "• Выбор домашнего региона: аэропорты подстроятся под вашу страну.\n\n"
+            "• Прямые ссылки на покупку: <b>GoToGate, OneTwoTrip, Trip.com, Aviasales, Skyscanner</b>.\n"
+            "• Выбор домашнего региона: список вылетов адаптируется под вашу страну.\n\n"
             "Выберите пункт меню ниже:"
         ),
         "menu_avia": "✈️ Найти авиабилет",
@@ -181,8 +181,8 @@ TEXTS = {
         "help": (
             "✈️ <b>Xalqaro aviachiptalar qidiruv tizimi</b>\n\n"
             "• Bir tomonga va <b>Borish-qaytish (Tuda-obratno)</b> chiptalari.\n"
-            "• <b>GoToGate, OneTwoTrip, Aviasales, Skyscanner</b> platformalariga mustaqil to'g'ridan-to'g'ri havolalar.\n"
-            "• O'zingiz turgan mintaqani tanlash: qayerdaligingizga qarab viloyatlar moslashadi.\n\n"
+            "• <b>GoToGate, OneTwoTrip, Trip.com, Aviasales, Skyscanner</b> platformalariga to'g'ridan-to'g'ri havolalar.\n"
+            "• Yashash mintaqangizga moslashuvchi qulay qidiruv.\n\n"
             "Boshlash uchun quyidagi menyudan foydalaning:"
         ),
         "menu_avia": "✈️ Aviachipta qidirish",
@@ -380,25 +380,32 @@ def money(usd, base_rate, lang):
         text += f" ≈ {spaced(round(usd * base_rate, -3))} {t(lang, 'uzs')}"
     return text
 
-# ---------- To'g'ridan-to'g'ri mustaqil havolalar ----------
+# ---------- To'g'ridan-to'g'ri aniq chipta havolalari ----------
 def build_direct_gotogate_url(origin, dest, dep_date, ret_date=None):
-    """GoToGate'ning o'zining to'g'ridan-to'g'ri qidiruv sahifasi"""
-    d = dep_date.replace("-", "")
+    """GoToGate'ning to'g'ridan-to'g'ri chipta qidiruv sahifasi"""
     if ret_date:
-        r = ret_date.replace("-", "")
-        return f"https://www.gotogate.com/air/search/roundtrip/{origin}/{dest}/{d}/{r}/1/0/0/Economy"
-    return f"https://www.gotogate.com/air/search/oneway/{origin}/{dest}/{d}/1/0/0/Economy"
+        return f"https://www.gotogate.com/air/search/roundtrip/{origin}/{dest}/{dep_date}/{ret_date}/1/0/0/Economy"
+    return f"https://www.gotogate.com/air/search/oneway/{origin}/{dest}/{dep_date}/1/0/0/Economy"
 
 def build_direct_onetwotrip_url(origin, dest, dep_date, ret_date=None):
-    """OneTwoTrip'ning o'zining to'g'ridan-to'g'ri qidiruv sahifasi"""
-    d = f"{dep_date[8:10]}{dep_date[5:7]}"
+    """OneTwoTrip'ning to'g'ridan-to'g'ri reyslar qidiruv sahifasi"""
+    d = datetime.strptime(dep_date, "%Y-%m-%d").strftime("%d%m")
     if ret_date:
-        r = f"{ret_date[8:10]}{ret_date[5:7]}"
+        r = datetime.strptime(ret_date, "%Y-%m-%d").strftime("%d%m")
         return f"https://www.onetwotrip.com/flights/{origin}{d}{dest}{r}100E/"
     return f"https://www.onetwotrip.com/flights/{origin}{d}{dest}100E/"
 
+def build_direct_trip_com_url(origin, dest, dep_date, ret_date=None):
+    """Trip.com xalqaro tizimining to'g'ridan-to'g'ri qidiruv sahifasi"""
+    url = f"https://www.trip.com/flights/{origin}-to-{dest}/tickets-cheap?dcity={origin}&acity={dest}&ddate={dep_date}"
+    if ret_date:
+        url += f"&rdate={ret_date}&flighttype=roundtrip"
+    else:
+        url += "&flighttype=oneway"
+    return url
+
 def build_direct_skyscanner_url(origin, dest, dep_date, ret_date=None):
-    """Skyscanner'ning to'g'ridan-to'g'ri qidiruv sahifasi"""
+    """Skyscanner to'g'ridan-to'g'ri qidiruvi"""
     d = dep_date.replace("-", "")[2:]
     if ret_date:
         r = ret_date.replace("-", "")[2:]
@@ -499,12 +506,11 @@ def kb_months(origin, dest, cls, airline, is_return, lang, min_date=None):
             m = 1
             y += 1
     b.adjust(2)
-    back_dest = f"cls:{origin}:{dest}:{cls}" if not is_return else f"decide_ret:{origin}:{dest}:{cls}:{airline}"
+    back_dest = f"cls:{origin}:{dest}:{cls}" if not is_return else f"c_back:{origin}:{dest}:{cls}:{airline}"
     b.row(InlineKeyboardButton(text=t(lang, "btn_back"), callback_data=back_dest))
     return b.as_markup()
 
 def kb_return_decision(origin, dest, cls, airline, dep_date, page_idx, lang):
-    """Qaytish sanasini qo'shish yoki faqat bir tomonga davom etish tanlovi"""
     b = InlineKeyboardBuilder()
     b.button(text=t(lang, "btn_add_return"), callback_data=f"ask_ret_month:{origin}:{dest}:{cls}:{airline}:{dep_date}")
     b.button(text=t(lang, "btn_oneway_only"), callback_data=f"show_oneway:{origin}:{dest}:{cls}:{airline}:{dep_date}:{page_idx}")
@@ -517,7 +523,6 @@ def kb_paged_calendar(origin, dest, cls, airline, year, month, prices, cheapest,
     today = date.today()
     total_days = calendar.monthrange(year, month)[1]
 
-    # Qaytish sanasi uchun minimal kun
     start_from = 1
     if min_day_date and year == min_day_date.year and month == min_day_date.month:
         start_from = min_day_date.day
@@ -589,24 +594,26 @@ def kb_not_found_redirect(origin, dest, cls, airline, day, page_idx, lang):
     b.adjust(1)
     return b.as_markup()
 
-# Har bir agentlikning o'ziga to'g'ridan-to'g'ri olib boruvchi havolalar paneli
+# Har bir agentlikka to'g'ridan-to'g'ri olib boruvchi inline tugmalar (Trip.com bilan birga)
 def kb_direct_agency_offers(origin, dest, cls, airline, dep_date, ret_date, page_idx, base_p, lang):
     b = InlineKeyboardBuilder()
     
-    # Har bir sotuvchi uchun to'g'ridan-to'g'ri mustaqil link
     url_gotogate = build_direct_gotogate_url(origin, dest, dep_date, ret_date)
     url_onetwotrip = build_direct_onetwotrip_url(origin, dest, dep_date, ret_date)
+    url_trip_com = build_direct_trip_com_url(origin, dest, dep_date, ret_date)
     url_skyscanner = build_direct_skyscanner_url(origin, dest, dep_date, ret_date)
     url_aviasales = build_aviasales_url(origin, dest, dep_date, ret_date)
 
     p_gotogate = base_p
     p_aviasales = round(base_p * 1.02)
     p_onetwotrip = round(base_p * 1.03)
-    p_skyscanner = round(base_p * 1.05)
+    p_trip_com = round(base_p * 1.01)
+    p_skyscanner = round(base_p * 1.04)
 
     b.button(text=f"🟢 GoToGate: ${p_gotogate:.0f} (To'g'ridan-to'g'ri)", url=url_gotogate)
-    b.button(text=f"🟡 Aviasales: ${p_aviasales:.0f}", url=url_aviasales)
+    b.button(text=f"🟣 Trip.com: ${p_trip_com:.0f} (To'g'ridan-to'g'ri)", url=url_trip_com)
     b.button(text=f"🔵 OneTwoTrip: ${p_onetwotrip:.0f} (To'g'ridan-to'g'ri)", url=url_onetwotrip)
+    b.button(text=f"🟡 Aviasales: ${p_aviasales:.0f}", url=url_aviasales)
     b.button(text=f"✈️ Skyscanner: ${p_skyscanner:.0f} (To'g'ridan-to'g'ri)", url=url_skyscanner)
 
     b.adjust(1)
@@ -680,14 +687,14 @@ def format_tickets_post(origin, dest, dep_date, ret_date, ticket, rates, cls, la
     airline_name = AIRLINES_LIST.get(airline_code, airline_code)
     
     base_p = float(ticket.get("price", 0))
-    # Agar borish-qaytish bo'lsa, narx ikki tomonlama hisoblanadi
     if ret_date:
         base_p = base_p * 1.85
 
     p_gotogate = base_p
-    p_onetwotrip = round(base_p * 1.03)
+    p_trip_com = round(base_p * 1.01)
     p_aviasales = round(base_p * 1.02)
-    p_skyscanner = round(base_p * 1.05)
+    p_onetwotrip = round(base_p * 1.03)
+    p_skyscanner = round(base_p * 1.04)
 
     mode_title = "🔄 <b>Borish-Qaytish (Tuda-obratno)</b>" if ret_date else "➡️ <b>Bir tomonga</b>"
     ret_line = f"📅 Qaytish sanasi: <b>{ret_date}</b>\n" if ret_date else ""
@@ -698,12 +705,13 @@ def format_tickets_post(origin, dest, dep_date, ret_date, ticket, rates, cls, la
         f"Klass: <b>{cls_name}</b> | Aviakompaniya: <b>{airline_name}</b>",
         f"🛫 Uchish sanasi: <b>{dep_date}</b>",
         ret_line,
-        "🏢 <b>Agentliklar bo'yicha to'g'ridan-to'g'ri narxlar:</b>",
+        "🏢 <b>Kompaniyalar bo'yicha to'g'ridan-to'g'ri narxlar:</b>",
         f"• 🟢 <b>GoToGate:</b> {money(p_gotogate, rates['cbu'], lang)}",
+        f"• 🟣 <b>Trip.com:</b> {money(p_trip_com, rates['cbu'], lang)}",
         f"• 🟡 <b>Aviasales:</b> {money(p_aviasales, rates['cbu'], lang)}",
         f"• 🔵 <b>OneTwoTrip:</b> {money(p_onetwotrip, rates['cbu'], lang)}",
         f"• ✈️ <b>Skyscanner:</b> {money(p_skyscanner, rates['cbu'], lang)}\n",
-        "<i>Har bir kompaniyadan mustaqil bron qilish uchun pastdagi tugmani bosing:</i>\n",
+        "<i>To'g'ridan-to'g'ri chipta qidiruviga o'tish uchun quyidagi tugmani bosing:</i>\n",
         f"💱 <b>Bank kursi:</b> Ipak Yo'li: {spaced(rates['ipak'])} | NBU: {spaced(rates['nbu'])} so'm"
     ]
     return "\n".join(lines), base_p
@@ -820,7 +828,6 @@ async def cb_airline(call: CallbackQuery):
         reply_markup=kb_months(origin, dest, cls, airline, False, lang)
     )
 
-# Borish oyi kalendari
 @dp.callback_query(F.data.startswith("m:"))
 async def cb_month(call: CallbackQuery):
     await call.answer()
@@ -849,7 +856,6 @@ async def cb_month(call: CallbackQuery):
     )
     await call.message.edit_text(txt, reply_markup=kb, parse_mode="HTML")
 
-# Borish kuni tanlandi -> Qaytish sanasini qo'shish so'raladi
 @dp.callback_query(F.data.startswith("c:"))
 async def cb_day_selected(call: CallbackQuery):
     await call.answer()
@@ -861,7 +867,6 @@ async def cb_day_selected(call: CallbackQuery):
     kb = kb_return_decision(origin, dest, cls, airline, day, page_idx, lang)
     await call.message.edit_text(txt, reply_markup=kb, parse_mode="HTML")
 
-# Faqat bir tomonga davom etish
 @dp.callback_query(F.data.startswith("show_oneway:"))
 async def cb_show_oneway(call: CallbackQuery):
     await call.answer()
@@ -885,7 +890,6 @@ async def cb_show_oneway(call: CallbackQuery):
     
     await call.message.edit_text(text, reply_markup=kb, parse_mode="HTML", link_preview_options=LinkPreviewOptions(is_disabled=True))
 
-# Qaytish oyi tanlash
 @dp.callback_query(F.data.startswith("ask_ret_month:"))
 async def cb_ask_ret_month(call: CallbackQuery):
     await call.answer()
@@ -893,13 +897,11 @@ async def cb_ask_ret_month(call: CallbackQuery):
     _, origin, dest, cls, airline, dep_date = call.data.split(":")
     min_date = datetime.strptime(dep_date, "%Y-%m-%d").date()
     
-    # Qaytish oylarini chiqarish
     await call.message.edit_text(
         t(lang, "ask_return_month"),
         reply_markup=kb_months(f"{origin}:{dep_date}", dest, cls, airline, True, lang, min_date=min_date)
     )
 
-# Qaytish kalendari
 @dp.callback_query(F.data.startswith("rm:"))
 async def cb_return_month_cal(call: CallbackQuery):
     await call.answer()
@@ -929,7 +931,6 @@ async def cb_return_month_cal(call: CallbackQuery):
     )
     await call.message.edit_text(txt, reply_markup=kb, parse_mode="HTML")
 
-# Qaytish kuni tanlandi -> Borish-qaytish natijalarini chiqarish
 @dp.callback_query(F.data.startswith("rc:"))
 async def cb_return_day_selected(call: CallbackQuery):
     await call.answer()
