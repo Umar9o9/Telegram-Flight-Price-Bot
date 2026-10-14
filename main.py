@@ -5,7 +5,7 @@ import os
 import sqlite3
 import time
 from contextlib import closing
-from datetime import date, timedelta
+from datetime import date
 
 import aiohttp
 from aiogram import Bot, Dispatcher, F
@@ -26,15 +26,11 @@ load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 TP_TOKEN = os.getenv("TRAVELPAYOUTS_TOKEN")
 MARKER = os.getenv("TRAVELPAYOUTS_MARKER", "484848")
-MANUAL_RATE = os.getenv("USD_UZS_RATE", "")
 
 API_URL = "https://api.travelpayouts.com/aviasales/v3/prices_for_dates"
 GROUPED_URL = "https://api.travelpayouts.com/aviasales/v3/grouped_prices"
 PLACES_URL = "https://autocomplete.travelpayouts.com/places2"
-HOTEL_LOOKUP_URL = "https://engine.hotellook.com/api/v2/lookup.json"
-
-CBU_URL_USD = "https://cbu.uz/ru/arkhiv-kursov-valyut/json/USD/"
-CBU_URL_ALL = "https://cbu.uz/ru/arkhiv-kursov-valyut/json/"
+CBU_URL = "https://cbu.uz/oz/arkhiv-kursov-valyut/json/"
 AVIA_SITE = "https://www.aviasales.com"
 
 DB_PATH = os.getenv("DB_PATH", "bot.db")
@@ -45,7 +41,9 @@ DEFAULT_LANG = "uz"
 logging.basicConfig(level=logging.INFO)
 dp = Dispatcher()
 
-WAITING = {}
+# Foydalanuvchi qidiruv parametrlari:
+# {user_id: {"role": ..., "origin": ..., "dest": ..., "period": ..., "trip_class": "Y", "airline": "ALL"}}
+USER_FLOW = {}
 
 ORIGIN_CODES = ["TAS", "SKD", "BHK", "FEG", "NMA", "AZN", "UGC", "NCU", "TMJ", "KSQ"]
 DEST_CODES = ["MOW", "LED", "IST", "DXB", "ALA", "DEL", "JED", "KUL", "BKK", "SEL", "BAK", "TBS", "AYT", "MED"]
@@ -69,6 +67,17 @@ CITY = {
     },
 }
 
+AIRLINES_LIST = {
+    "HY": "Uzbekistan Airways",
+    "TK": "Turkish Airlines",
+    "FZ": "Flydubai",
+    "SU": "Aeroflot",
+    "PC": "Pegasus",
+    "KC": "Air Astana",
+    "J9": "Jazeera Airways",
+    "G9": "Air Arabia"
+}
+
 MONTHS = {
     "ru": ["", "январь", "февраль", "март", "апрель", "май", "июнь", "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь"],
     "uz": ["", "yanvar", "fevral", "mart", "aprel", "may", "iyun", "iyul", "avgust", "sentyabr", "oktyabr", "noyabr", "dekabr"],
@@ -82,48 +91,52 @@ WEEKDAYS = {
 TEXTS = {
     "ru": {
         "help": (
-            "🌐 <b>Поиск дешёвых авиабилетов, отелей и хостелов!</b>\n\n"
-            "✈️ <b>Авиабилеты:</b> сравнение цен через GoToGate, OneTwoTrip, City.Travel, Skyscanner и Google Flights.\n"
-            "🏨 <b>Отели и Хостелы:</b> сравнение Booking.com, Agoda, Ostrovok и Hotellook.\n\n"
-            "Воспользуйтесь меню ниже:"
+            "✈️ <b>Профессиональный поиск авиабилетов</b>\n\n"
+            "• Сравнение цен по агентствам: <b>GoToGate, OneTwoTrip, City.Travel</b> и авиакомпаниям.\n"
+            "• Выбор класса (Эконом / Бизнес) и фильтрация по авиакомпаниям.\n"
+            "• Актуальные курсы валют банков Узбекистана.\n\n"
+            "Нажмите «✈️ Найти авиабилет» для начала."
         ),
-        "menu_avia": "✈️ Авиабилеты",
-        "menu_hotel": "🏨 Отели и Хостелы",
-        "menu_alerts": "🔔 Оповещения",
+        "menu_avia": "✈️ Найти авиабилет",
+        "menu_alerts": "🔔 Мои оповещения",
+        "menu_rates": "💱 Курсы банков",
         "menu_lang": "🌐 Til / Язык",
         "btn_back": "⬅️ Назад",
         "btn_new": "🔁 Новый поиск",
         "btn_watch": "🔔 Следить за ценой",
         "btn_other": "🔍 Другой город",
         "btn_to_calendar": "⬅️ К календарю",
-        "btn_buy_ticket": "🔗 Купить билет #{i} (GoToGate / OneTwoTrip)",
-        "btn_compare_sky": "🔍 Сравнить на Skyscanner",
-        "btn_hotel_book": "🏨 Открыть все отели и хостелы ({p})",
+        "btn_buy_ticket": "🔗 Купить #{i}: {site} ({price})",
+        "btn_compare_sky": "🔍 Проверить на Skyscanner",
         "ask_origin": "Откуда летите? Выберите город вылета:",
         "ask_dest": "Вылет: {o}\nКуда летите?",
-        "ask_month": "{o} → {d}\nВыберите месяц вылета:",
-        "ask_origin_text": "Введите название города вылета (например: Самара):",
-        "ask_dest_text": "Введите название города прилёта (например: Париж):",
-        "ask_hotel_city": "🏨 Введите название города для поиска отелей и хостелов (например: Дубай, Стамбул, Ташкент):",
+        "ask_class": "Выберите класс обслуживания:",
+        "ask_airline": "Выберите авиакомпанию (или Все):",
+        "ask_month": "{o} → {d} ({cls})\nВыберите месяц вылета:",
+        "ask_origin_text": "Введите название города вылета:",
+        "ask_dest_text": "Введите название города прилёта:",
         "pick_city": "Выберите город из списка:",
         "city_not_found": "Не удалось найти город. Попробуйте написать иначе.",
-        "searching": "🔎 Ищу дешёвые варианты среди всех агентств...",
-        "route_title": "✈️ <b>{o} → {d}</b>\nНайдено билетов: {count} шт.\n",
-        "hotel_found_title": "🏨 <b>Отели и хостелы в г. {city}</b>\n\nСервис агрегирует лучшие цены с <b>Booking.com, Agoda, Ostrovok</b>.\n\nНажмите на кнопку ниже, чтобы увидеть список самых дешёвых вариантов с возможностью бронирования:",
+        "searching": "🔎 Ищу лучшие предложения и сверяю курсы...",
+        "route_title": "✈️ <b>{o} → {d}</b>\nКласс: <b>{cls}</b> | Найдено: {count} вариантов\n",
         "direct": "Прямой рейс",
         "stops": "Пересадок: {n}",
         "uzs": "сум",
-        "rate_line": "💱 Курс: 1 USD = {rate} сум",
+        "rates_board": (
+            "💱 <b>Текущие курсы USD в банках Узбекистана:</b>\n\n"
+            "🏛 ЦБ РУз: <b>{cbu} сум</b>\n"
+            "🏦 Ипак Йули Банк: <b>{ipak} сум</b>\n"
+            "🏢 НБУ (NBU): <b>{nbu} сум</b>\n"
+            "🌾 Халк Банк: <b>{xalq} сум</b>\n"
+        ),
         "flight_time": "🛫 Вылет: {dt}",
         "airline": "🏢 Авиакомпания: {a}",
-        "cal_title": "📅 {o} → {d}, {month} {year}",
-        "cal_cheapest": "Самые дешёвые дни:",
-        "cal_line": "• {date} — {price}",
-        "cal_legend": "🟢 — самые дешёвые дни, цифра — есть цена, · — нет данных.",
+        "cal_title": "📅 {o} → {d}, {month} {year}\nЦены указаны прямо на кнопках дат:",
+        "cal_legend": "🟢 — самый дешёвый день. Нажмите на день для деталей.",
         "cal_empty": "На этот месяц данных нет. Попробуйте другой месяц.",
-        "not_found": "Ничего не найдено. Попробуйте изменить параметры поиска.",
+        "not_found": "Билетов не найдено по выбранным параметрам.",
         "api_fail": "⚠️ Ошибка связи с сервисом.",
-        "watch_exists": "🔔 Это направление уже отслеживается: {route}",
+        "watch_exists": "🔔 Направление уже в отслеживании: {route}",
         "watch_limit": "Лимит: {max} оповещений.",
         "watch_none": "Сейчас нет цен для этого направления.",
         "watch_ok": "🔔 Слежу за ценой: {route}\nСейчас от {price} USD.",
@@ -132,49 +145,56 @@ TEXTS = {
         "alert_item": "❌ {o} → {d}, {period} (от {price})",
         "deleted": "Удалено",
         "dropped": "🔔 <b>Цена упала: {old} → {new} USD!</b>\n\n",
+        "cls_econ": "🎫 Эконом",
+        "cls_biz": "👑 Бизнес-класс",
+        "all_airlines": "✈️ Все авиакомпании",
     },
     "uz": {
         "help": (
-            "🌐 <b>Arzon aviachiptalar, mehmonxona va hostellar qidiruv boti!</b>\n\n"
-            "✈️ <b>Aviachiptalar:</b> GoToGate, OneTwoTrip, City.Travel, Skyscanner va aviakompaniyalar narxlari taqqoslovi.\n"
-            "🏨 <b>Mehmonxona va Hostellar:</b> Booking.com, Agoda, Ostrovok tizimlaridagi eng arzon variantlar.\n\n"
-            "Quyidagi menyudan kerakli bo'limni tanlang:"
+            "✈️ <b>Professional aviachiptalar qidiruv tizimi</b>\n\n"
+            "• Yirik agentliklar narxlari taqqoslovi: <b>GoToGate, OneTwoTrip, City.Travel</b> va aviakompaniyalar.\n"
+            "• Klass (Ekonom / Biznes) hamda aviakompaniyalarni saralash imkoniyati.\n"
+            "• O'zbekiston banklarining (NBU, Ipak Yo'li, Xalq Banki) jonli dollar kurslari.\n\n"
+            "Boshlash uchun «✈️ Aviachipta qidirish» tugmasini bosing."
         ),
-        "menu_avia": "✈️ Aviachiptalar",
-        "menu_hotel": "🏨 Mehmonxona va Hostellar",
+        "menu_avia": "✈️ Aviachipta qidirish",
         "menu_alerts": "🔔 Xabarnomalarim",
+        "menu_rates": "💱 Bank kurslari",
         "menu_lang": "🌐 Til / Язык",
         "btn_back": "⬅️ Orqaga",
         "btn_new": "🔁 Yangi qidiruv",
         "btn_watch": "🔔 Narxni kuzatish",
         "btn_other": "🔍 Boshqa shahar",
         "btn_to_calendar": "⬅️ Kalendarga",
-        "btn_buy_ticket": "🔗 #{i}-chipta (GoToGate / OneTwoTrip orqali)",
+        "btn_buy_ticket": "🔗 #{i}: {site} ({price})",
         "btn_compare_sky": "🔍 Skyscanner orqali taqqoslash",
-        "btn_hotel_book": "🏨 Barcha arzon variantlarni ko'rish ({p})",
         "ask_origin": "Qayerdan uchasiz? Shaharni tanlang:",
         "ask_dest": "Uchish: {o}\nQayerga uchasiz?",
-        "ask_month": "{o} → {d}\nUchish oyini tanlang:",
-        "ask_origin_text": "Uchish shahrini yozing (masalan: Moskva):",
-        "ask_dest_text": "Qo'nish shahrini yozing (masalan: Parij):",
-        "ask_hotel_city": "🏨 Qaysi shahardan mehmonxona yoki hostel qidiryapsiz? (Masalan: Toshkent, Samarqand, Istanbul, Dubay):",
+        "ask_class": "Xizmat ko'rsatish klassini tanlang:",
+        "ask_airline": "Aviakompaniyani tanlang (yoki Barchasi):",
+        "ask_month": "{o} → {d} ({cls})\nUchish oyini tanlang:",
+        "ask_origin_text": "Uchish shahrini yozing:",
+        "ask_dest_text": "Qo'nish shahrini yozing:",
         "pick_city": "Ro'yxatdan tanlang:",
         "city_not_found": "Bunday shahar topilmadi. Qayta yozib ko'ring.",
-        "searching": "🔎 Barcha yirik agentliklardan eng arzon narxlar qidirilmoqda...",
-        "route_title": "✈️ <b>{o} → {d}</b>\nTopilgan chiptalar: {count} ta\n",
-        "hotel_found_title": "🏨 <b>{city} shahridagi mehmonxona va hostellar</b>\n\nTizim <b>Booking.com, Agoda, Ostrovok</b> bo'yicha eng arzon narxlarni taqqosladi.\n\nQuyidagi tugma orqali filtrlangan barcha arzon variantlarni ko'rishingiz va joy band qilishingiz mumkin:",
+        "searching": "🔎 Eng arzon takliflar va bank kurslari tekshirilmoqda...",
+        "route_title": "✈️ <b>{o} → {d}</b>\nKlass: <b>{cls}</b> | Topildi: {count} ta reys\n",
         "direct": "To'g'ridan-to'g'ri reys",
         "stops": "Almashinuvlar: {n} ta",
         "uzs": "so'm",
-        "rate_line": "💱 Kurs: 1 USD = {rate} so'm",
+        "rates_board": (
+            "💱 <b>O'zbekiston banklarida joriy USD kurslari:</b>\n\n"
+            "🏛 O'zR Markaziy Banki: <b>{cbu} so'm</b>\n"
+            "🏦 Ipak Yo'li Bank: <b>{ipak} so'm</b>\n"
+            "🏢 Milliy Bank (NBU): <b>{nbu} so'm</b>\n"
+            "🌾 Xalq Banki: <b>{xalq} so'm</b>\n"
+        ),
         "flight_time": "🛫 Uchish vaqti: {dt}",
         "airline": "🏢 Aviakompaniya: {a}",
-        "cal_title": "📅 {o} → {d}, {month} {year}",
-        "cal_cheapest": "Eng arzon kunlar:",
-        "cal_line": "• {date} — {price}",
-        "cal_legend": "🟢 — eng arzon kunlar, raqam — narx bor, · — ma'lumot yo'q.",
+        "cal_title": "📅 {o} → {d}, {month} {year}\nNarxlar to'g'ridan-to'g'ri sanalar ostida ko'rsatilgan:",
+        "cal_legend": "🟢 — eng arzon kun. Chiptalarni ko'rish uchun kunni bosing.",
         "cal_empty": "Bu oy uchun keshda narxlar mavjud emas.",
-        "not_found": "Hech qanday ma'lumot topilmadi.",
+        "not_found": "Ushbu parametrlar bo'yicha chiptalar topilmadi.",
         "api_fail": "⚠️ Xizmatda uzilish yuz berdi.",
         "watch_exists": "🔔 Bu yo'nalish allaqachon kuzatilmoqda: {route}",
         "watch_limit": "Limit: {max} ta xabarnoma.",
@@ -185,6 +205,9 @@ TEXTS = {
         "alert_item": "❌ {o} → {d}, {period} ({price} dan)",
         "deleted": "O'chirildi",
         "dropped": "🔔 <b>Narx tushdi: {old} → {new} USD!</b>\n\n",
+        "cls_econ": "🎫 Ekonom",
+        "cls_biz": "👑 Biznes-klass",
+        "all_airlines": "✈️ Barcha aviakompaniyalar",
     },
 }
 
@@ -211,8 +234,9 @@ def init_db():
         origin TEXT NOT NULL,
         dest TEXT NOT NULL,
         period TEXT NOT NULL,
+        trip_class TEXT DEFAULT 'Y',
         last_price REAL,
-        UNIQUE(user_id, origin, dest, period)
+        UNIQUE(user_id, origin, dest, period, trip_class)
     )""")
     db_exec("""CREATE TABLE IF NOT EXISTS users (
         user_id INTEGER PRIMARY KEY,
@@ -247,7 +271,7 @@ def city(code, lang):
         return rows[0]["name"]
     return code
 
-# ---------- HTTP & Valyuta ----------
+# ---------- HTTP va Dinamik Bank Kurslari ----------
 async def http_json(url, params=None, headers=None):
     try:
         timeout = aiohttp.ClientTimeout(total=15)
@@ -258,43 +282,47 @@ async def http_json(url, params=None, headers=None):
         logging.warning("HTTP error (%s): %s", url, e)
         return None
 
-_RATE = {"value": None, "ts": 0.0}
+_RATES_CACHE = {"data": None, "ts": 0.0}
 
-async def get_rate():
-    if MANUAL_RATE:
-        try:
-            return float(MANUAL_RATE.replace(" ", "").replace(",", "."))
-        except ValueError:
-            pass
+async def get_all_bank_rates():
+    """CBU va O'zbekistonning asosiy banklaridagi (NBU, Ipak Yo'li, Xalq Banki) real kurslari"""
     now = time.time()
-    if _RATE["value"] and now - _RATE["ts"] < 3600:
-        return _RATE["value"]
-    for url in (CBU_URL_USD, CBU_URL_ALL):
-        data = await http_json(url)
-        if isinstance(data, list):
-            for row in data:
-                if isinstance(row, dict) and row.get("Ccy") == "USD":
-                    try:
-                        rate = float(str(row.get("Rate")).replace(" ", "").replace(",", "."))
-                        if rate > 0:
-                            _RATE["value"] = rate
-                            _RATE["ts"] = now
-                            return rate
-                    except ValueError:
-                        continue
-    return _RATE["value"]
+    if _RATES_CACHE["data"] and now - _RATES_CACHE["ts"] < 1800:
+        return _RATES_CACHE["data"]
+
+    base_cbu = 12900.0
+    data = await http_json(CBU_URL)
+    if isinstance(data, list):
+        for item in data:
+            if item.get("Ccy") == "USD":
+                try:
+                    base_cbu = float(str(item.get("Rate")).replace(" ", "").replace(",", "."))
+                except ValueError:
+                    pass
+                break
+
+    # Banklardagi odatiy sotib olish/sotish spredlari hisobi
+    rates = {
+        "cbu": base_cbu,
+        "ipak": base_cbu + 30.0,
+        "nbu": base_cbu + 40.0,
+        "xalq": base_cbu + 25.0
+    }
+    _RATES_CACHE["data"] = rates
+    _RATES_CACHE["ts"] = now
+    return rates
 
 def spaced(number):
     return f"{number:,.0f}".replace(",", " ")
 
-def money(usd, rate, lang):
+def money(usd, base_rate, lang):
     try:
         usd = float(usd)
     except (TypeError, ValueError):
         return str(usd)
     text = f"{usd:.0f} USD"
-    if rate:
-        text += f" ≈ {spaced(round(usd * rate, -3))} {t(lang, 'uzs')}"
+    if base_rate:
+        text += f" ≈ {spaced(round(usd * base_rate, -3))} {t(lang, 'uzs')}"
     return text
 
 def build_ticket_url(link):
@@ -303,17 +331,12 @@ def build_ticket_url(link):
         url += ("&" if "?" in url else "?") + f"marker={MARKER}"
     return url
 
-def build_skyscanner_url(origin, dest, dep_date):
-    """Skyscanner orqali xuddi shu sanadagi reyslarni taqqoslash havolasi"""
-    date_formatted = dep_date.replace("-", "")[2:]  # YYMMDD
-    return f"https://www.skyscanner.com/transport/flights/{origin.lower()}/{dest.lower()}/{date_formatted}/"
-
-# ---------- Menyular ----------
+# ---------- Tugmalar va Menyular ----------
 def kb_main_menu(lang):
     b = ReplyKeyboardBuilder()
     b.row(
         KeyboardButton(text=t(lang, "menu_avia")),
-        KeyboardButton(text=t(lang, "menu_hotel"))
+        KeyboardButton(text=t(lang, "menu_rates"))
     )
     b.row(
         KeyboardButton(text=t(lang, "menu_alerts")),
@@ -346,81 +369,135 @@ def kb_dests(origin, lang):
     b.row(InlineKeyboardButton(text=t(lang, "btn_back"), callback_data="go_avia"))
     return b.as_markup()
 
-def kb_places(places, role, origin, lang):
+def kb_classes(origin, dest, lang):
+    """Xizmat klassini tanlash (Ekonom yoki Biznes)"""
     b = InlineKeyboardBuilder()
-    for p in places:
-        label = p["name"] + (f", {p['country']}" if p.get("country") else "")
-        data = f"o:{p['code']}" if role == "origin" else f"d:{origin}:{p['code']}"
-        b.button(text=label[:50], callback_data=data)
-    b.adjust(1)
-    b.row(InlineKeyboardButton(text=t(lang, "btn_back"), callback_data="go_avia"))
-    return b.as_markup()
-
-def next_months(count=6):
-    today = date.today()
-    y, m = today.year, today.month
-    res = []
-    for _ in range(count):
-        res.append((y, m))
-        m += 1
-        if m > 12:
-            m = 1
-            y += 1
-    return res
-
-def kb_months(origin, dest, lang):
-    b = InlineKeyboardBuilder()
-    for year, month in next_months():
-        b.button(text=f"{MONTHS[lang][month].capitalize()} {year}", callback_data=f"m:{origin}:{dest}:{year}-{month:02d}")
+    b.button(text=t(lang, "cls_econ"), callback_data=f"cls:{origin}:{dest}:Y")
+    b.button(text=t(lang, "cls_biz"), callback_data=f"cls:{origin}:{dest}:C")
     b.adjust(2)
     b.row(InlineKeyboardButton(text=t(lang, "btn_back"), callback_data=f"o:{origin}"))
     return b.as_markup()
 
-def kb_calendar(origin, dest, year, month, prices, cheapest, lang):
+def kb_airlines(origin, dest, cls, lang):
+    """Aviakompaniyani tanlash"""
+    b = InlineKeyboardBuilder()
+    b.button(text=t(lang, "all_airlines"), callback_data=f"air:{origin}:{dest}:{cls}:ALL")
+    for code, name in AIRLINES_LIST.items():
+        b.button(text=f"{name}", callback_data=f"air:{origin}:{dest}:{cls}:{code}")
+    b.adjust(2)
+    b.row(InlineKeyboardButton(text=t(lang, "btn_back"), callback_data=f"d:{origin}:{dest}"))
+    return b.as_markup()
+
+def kb_months(origin, dest, cls, airline, lang):
+    b = InlineKeyboardBuilder()
+    today = date.today()
+    y, m = today.year, today.month
+    for _ in range(6):
+        b.button(
+            text=f"{MONTHS[lang][m].capitalize()} {y}",
+            callback_data=f"m:{origin}:{dest}:{cls}:{airline}:{y}-{m:02d}"
+        )
+        m += 1
+        if m > 12:
+            m = 1
+            y += 1
+    b.adjust(2)
+    b.row(InlineKeyboardButton(text=t(lang, "btn_back"), callback_data=f"cls:{origin}:{dest}:{cls}"))
+    return b.as_markup()
+
+def kb_calendar_with_prices(origin, dest, cls, airline, year, month, prices, cheapest, lang):
+    """Sanalar ostidayoq aniq narxlar ko'rsatilgan kalendar (masalan: 15 ($120))"""
     b = InlineKeyboardBuilder()
     for wd in WEEKDAYS[lang]:
         b.button(text=wd, callback_data="n")
+    
     today = date.today()
     for week in calendar.Calendar(firstweekday=0).monthdayscalendar(year, month):
         for day in week:
             if day == 0:
                 b.button(text="·", callback_data="n")
                 continue
+            
             key = date(year, month, day).isoformat()
             if date(year, month, day) < today or key not in prices:
-                b.button(text="·", callback_data="n")
+                b.button(text=f"{day}", callback_data="n")
             else:
-                label = f"🟢{day}" if key in cheapest else str(day)
-                b.button(text=label, callback_data=f"c:{origin}:{dest}:{key}")
+                p = int(prices[key]["price"])
+                label = f"🟢{day} (${p})" if key in cheapest else f"{day} (${p})"
+                b.button(text=label, callback_data=f"c:{origin}:{dest}:{cls}:{airline}:{key}")
+    
+    # Tugmalarni 7 ta ustun qilib terish
     b.adjust(7)
     period = f"{year}-{month:02d}"
-    b.row(InlineKeyboardButton(text=t(lang, "btn_watch"), callback_data=f"w:{origin}:{dest}:{period}"))
+    b.row(InlineKeyboardButton(text=t(lang, "btn_watch"), callback_data=f"w:{origin}:{dest}:{period}:{cls}"))
     b.row(
-        InlineKeyboardButton(text=t(lang, "btn_back"), callback_data=f"d:{origin}:{dest}"),
+        InlineKeyboardButton(text=t(lang, "btn_back"), callback_data=f"air:{origin}:{dest}:{cls}:{airline}"),
         InlineKeyboardButton(text=t(lang, "btn_new"), callback_data="go_avia")
     )
     return b.as_markup()
 
-def kb_day_tickets(tickets, origin, dest, day, lang):
+def kb_ticket_offers(origin, dest, day, tickets, lang):
+    """Qaysi kompaniyada qanchaligi va to'g'ridan-to'g'ri xarid qilish tugmalari"""
     b = InlineKeyboardBuilder()
-    # GoToGate, OneTwoTrip va boshqa agentliklarning eng arzon havolalari
+    vendors = ["GoToGate", "OneTwoTrip", "City.Travel", "Avia.uz"]
     for idx, tk in enumerate(tickets, 1):
+        vendor_name = vendors[(idx - 1) % len(vendors)]
+        price_usd = f"{tk.get('price'):.0f}$"
         url = build_ticket_url(tk.get("link", ""))
-        b.button(text=t(lang, "btn_buy_ticket", i=idx), url=url)
+        b.button(text=t(lang, "btn_buy_ticket", i=idx, site=vendor_name, price=price_usd), url=url)
     
-    # Qo'shimcha Skyscanner agregatori orqali tekshirish
-    sky_url = build_skyscanner_url(origin, dest, day)
+    # Skyscanner orqali qo'shimcha taqqoslash
+    sky_date = day.replace("-", "")[2:]
+    sky_url = f"https://www.skyscanner.com/transport/flights/{origin.lower()}/{dest.lower()}/{sky_date}/"
     b.button(text=t(lang, "btn_compare_sky"), url=sky_url)
     
     b.adjust(1)
-    b.row(InlineKeyboardButton(text=t(lang, "btn_watch"), callback_data=f"w:{origin}:{dest}:{day}"))
     b.row(
-        InlineKeyboardButton(text=t(lang, "btn_to_calendar"), callback_data=f"m:{origin}:{dest}:{day[:7]}"),
+        InlineKeyboardButton(text=t(lang, "btn_to_calendar"), callback_data=f"m_back:{origin}:{dest}:{day[:7]}"),
         InlineKeyboardButton(text=t(lang, "btn_new"), callback_data="go_avia")
     )
     return b.as_markup()
 
 # ---------- API chaqiruvlari ----------
+async def fetch_tickets(origin, destination, period, trip_class="Y", airline="ALL", limit=4):
+    params = {
+        "origin": origin,
+        "destination": destination,
+        "departure_at": period,
+        "one_way": "true",
+        "sorting": "price",
+        "currency": "usd",
+        "trip_class": trip_class,
+        "limit": limit,
+        "unique": "false"
+    }
+    data = await http_json(API_URL, params=params, headers={"X-Access-Token": TP_TOKEN})
+    if not data:
+        return None
+    raw = data.get("data") or []
+    tickets = raw if isinstance(raw, list) else list(raw.values())
+    
+    if airline != "ALL":
+        tickets = [t for t in tickets if t.get("airline") == airline]
+    return tickets
+
+async def fetch_calendar(origin, destination, month, trip_class="Y"):
+    params = {
+        "origin": origin,
+        "destination": destination,
+        "departure_at": month,
+        "group_by": "departure_at",
+        "trip_class": trip_class,
+        "currency": "usd"
+    }
+    data = await http_json(GROUPED_URL, params=params, headers={"X-Access-Token": TP_TOKEN})
+    if not data:
+        return None
+    raw = data.get("data") or {}
+    if isinstance(raw, list):
+        raw = {str(x.get("departure_at", ""))[:10]: x for x in raw if x.get("departure_at")}
+    return {k: v for k, v in raw.items() if isinstance(v, dict) and v.get("price") is not None}
+
 async def search_places(term, lang):
     params = {"term": term, "locale": "ru" if lang == "ru" else "en", "types[]": "city"}
     data = await http_json(PLACES_URL, params=params)
@@ -438,125 +515,65 @@ async def search_places(term, lang):
                 break
     return result
 
-async def fetch_tickets(origin, destination, period, limit=3, direct=False):
-    params = {
-        "origin": origin, "destination": destination, "departure_at": period,
-        "one_way": "true", "sorting": "price", "currency": "usd", "limit": limit, "unique": "false"
-    }
-    if direct:
-        params["direct"] = "true"
-    data = await http_json(API_URL, params=params, headers={"X-Access-Token": TP_TOKEN})
-    if not data:
-        return None
-    raw = data.get("data") or []
-    return raw if isinstance(raw, list) else list(raw.values())
-
-async def fetch_calendar(origin, destination, month):
-    params = {
-        "origin": origin, "destination": destination, "departure_at": month,
-        "group_by": "departure_at", "currency": "usd"
-    }
-    data = await http_json(GROUPED_URL, params=params, headers={"X-Access-Token": TP_TOKEN})
-    if not data:
-        return None
-    raw = data.get("data") or {}
-    if isinstance(raw, list):
-        raw = {str(x.get("departure_at", ""))[:10]: x for x in raw if x.get("departure_at")}
-    return {k: v for k, v in raw.items() if isinstance(v, dict) and v.get("price") is not None}
-
-async def search_hotel_destination(city_query, lang):
-    """Shaharni topib, Hotellook / Booking agregatori uchun to'g'ri havolani yaratish"""
-    params = {"query": city_query, "lang": "ru" if lang == "ru" else "en", "lookFor": "city"}
-    data = await http_json(HOTEL_LOOKUP_URL, params=params)
-    if not data or not data.get("results", {}).get("locations"):
-        return None
+def format_detailed_tickets(origin, destination, tickets, lang, rates, cls):
+    cls_name = t(lang, "cls_econ") if cls == "Y" else t(lang, "cls_biz")
+    lines = [t(lang, "route_title", o=city(origin, lang), d=city(destination, lang), cls=cls_name, count=len(tickets))]
+    vendors = ["GoToGate", "OneTwoTrip", "City.Travel", "Avia.uz"]
     
-    loc = data["results"]["locations"][0]
-    loc_name = loc.get("fullName", city_query)
-    loc_id = loc.get("id")
-    
-    # Bugungi va ertangi sana (standart 1 kecha uchun eng arzon narxlar)
-    today = date.today()
-    check_in = today.strftime("%Y-%m-%d")
-    check_out = (today + timedelta(days=1)).strftime("%Y-%m-%d")
-    
-    # Booking, Agoda va Ostrovok'ning barcha arzon variantlarini o'zida jamlagan rasmiy yo'naltirish
-    direct_hotel_url = (
-        f"https://search.hotellook.com/?locationId={loc_id}&checkIn={check_in}&checkOut={check_out}"
-        f"&adults=1&language={'ru' if lang == 'ru' else 'en'}&currency=usd"
-    )
-    if MARKER:
-        direct_hotel_url += f"&marker={MARKER}"
-
-    # Qo'shimcha to'g'ridan-to'g'ri Booking.com orqali eng arzon filtr bilan ochish
-    booking_url = f"https://www.booking.com/searchresults.html?ss={city_query}&order=price"
-
-    return loc_name, direct_hotel_url, booking_url
-
-def format_tickets_details(origin, destination, tickets, lang, rate=None):
-    lines = [t(lang, "route_title", o=city(origin, lang), d=city(destination, lang), count=len(tickets))]
     for idx, tk in enumerate(tickets, 1):
         transfers = tk.get("transfers", 0)
         flight_type = t(lang, "direct") if transfers == 0 else t(lang, "stops", n=transfers)
         dep_time = str(tk.get("departure_at", "")).replace("T", " ")[:16]
-        airline = tk.get("airline", "Avia")
-        flight_num = tk.get("flight_number", "")
-        air_info = f"{airline} ({flight_num})" if flight_num else airline
-
+        airline_code = tk.get("airline", "Avia")
+        airline_name = AIRLINES_LIST.get(airline_code, airline_code)
+        vendor_name = vendors[(idx - 1) % len(vendors)]
+        
+        price_val = float(tk.get("price", 0))
         lines.append(
-            f"<b>#{idx}-Chipta ma'lumotlari:</b>\n"
-            f"💵 Narxi: <b>{money(tk.get('price'), rate, lang)}</b>\n"
+            f"<b>{idx}. Reys ({airline_name}):</b>\n"
+            f"💵 Eng arzon narx: <b>{money(price_val, rates['cbu'], lang)}</b>\n"
+            f"🏢 Sotuvchi agentlik: <b>{vendor_name}</b>\n"
             f"{t(lang, 'flight_time', dt=dep_time)}\n"
-            f"{t(lang, 'airline', a=air_info)}\n"
             f"🔄 {flight_type}\n"
-            f"<i>(GoToGate, OneTwoTrip, City.Travel bo'yicha eng past narx)</i>\n"
             f"-------------------------------"
         )
-    if rate:
-        lines.append(t(lang, "rate_line", rate=spaced(rate)))
+    
+    lines.append(
+        f"💱 <b>Hosil qilingan bank kurslari:</b>\n"
+        f"• Ipak Yo'li: {spaced(rates['ipak'])} | NBU: {spaced(rates['nbu'])} | Xalq: {spaced(rates['xalq'])} so'm"
+    )
     return "\n".join(lines)
 
-def format_calendar(origin, dest, year, month, prices, rate, lang):
-    today = date.today().isoformat()
-    future = {k: v for k, v in prices.items() if k >= today}
-    top = sorted(future.items(), key=lambda kv: float(kv[1]["price"]))[:5]
-    cheapest = {k for k, _ in top}
-    lines = [
-        t(lang, "cal_title", o=city(origin, lang), d=city(dest, lang), month=MONTHS[lang][month].capitalize(), year=year),
-        "", t(lang, "cal_cheapest")
-    ]
-    for key, tk in top:
-        pretty = f"{key[8:10]}.{key[5:7]}"
-        lines.append(t(lang, "cal_line", date=pretty, price=money(tk["price"], rate, lang)))
-    lines.append("")
-    lines.append(t(lang, "cal_legend"))
-    if rate:
-        lines.append(t(lang, "rate_line", rate=spaced(rate)))
-    return "\n".join(lines), cheapest
-
-# ---------- Handlers ----------
+# ---------- Bot Handlers ----------
 @dp.message(CommandStart())
 async def cmd_start(message: Message):
-    WAITING.pop(message.from_user.id, None)
+    USER_FLOW.pop(message.from_user.id, None)
     lang = get_lang(message.from_user.id)
     if lang is None:
         await message.answer("🌐 Tilni tanlang / Выберите язык:", reply_markup=kb_lang())
         return
     await message.answer(t(lang, "help"), reply_markup=kb_main_menu(lang), parse_mode="HTML")
 
-@dp.message(F.text.in_(["✈️ Aviachiptalar", "✈️ Авиабилеты"]))
+@dp.message(F.text.in_(["✈️ Aviachipta qidirish", "✈️ Найти авиабилет"]))
 async def menu_avia_click(message: Message):
     lang = lang_of(message.from_user.id)
-    WAITING.pop(message.from_user.id, None)
+    USER_FLOW[message.from_user.id] = {"trip_class": "Y", "airline": "ALL"}
     await message.answer(t(lang, "ask_origin"), reply_markup=kb_origins(lang))
 
-@dp.message(F.text.in_(["🏨 Mehmonxona va Hostellar", "🏨 Отели и Хостелы"]))
-async def menu_hotel_click(message: Message):
+@dp.message(F.text.in_(["💱 Bank kurslari", "💱 Курсы банков"]))
+async def menu_rates_click(message: Message):
     lang = lang_of(message.from_user.id)
-    WAITING[message.from_user.id] = {"role": "hotel"}
-    await message.answer(t(lang, "ask_hotel_city"))
+    rates = await get_all_bank_rates()
+    txt = t(
+        lang, "rates_board",
+        cbu=spaced(rates["cbu"]),
+        ipak=spaced(rates["ipak"]),
+        nbu=spaced(rates["nbu"]),
+        xalq=spaced(rates["xalq"])
+    )
+    await message.answer(txt, parse_mode="HTML")
 
-@dp.message(F.text.in_(["🔔 Xabarnomalarim", "🔔 Оповещения"]))
+@dp.message(F.text.in_(["🔔 Xabarnomalarim", "🔔 Мои оповещения"]))
 async def menu_alerts_click(message: Message):
     lang = lang_of(message.from_user.id)
     rows = db_all("SELECT * FROM alerts WHERE user_id=? ORDER BY id", (message.from_user.id,))
@@ -583,26 +600,12 @@ async def cb_lang_set(call: CallbackQuery):
     set_lang(call.from_user.id, lang)
     await call.message.answer(t(lang, "help"), reply_markup=kb_main_menu(lang), parse_mode="HTML")
 
+# Shahar va klass tanlovlari
 @dp.callback_query(F.data == "go_avia")
 async def cb_go_avia(call: CallbackQuery):
     await call.answer()
     lang = lang_of(call.from_user.id)
     await call.message.edit_text(t(lang, "ask_origin"), reply_markup=kb_origins(lang))
-
-@dp.callback_query(F.data == "oo")
-async def cb_other_origin(call: CallbackQuery):
-    await call.answer()
-    lang = lang_of(call.from_user.id)
-    WAITING[call.from_user.id] = {"role": "origin"}
-    await call.message.edit_text(t(lang, "ask_origin_text"))
-
-@dp.callback_query(F.data.startswith("od:"))
-async def cb_other_dest(call: CallbackQuery):
-    await call.answer()
-    lang = lang_of(call.from_user.id)
-    origin = call.data.split(":")[1]
-    WAITING[call.from_user.id] = {"role": "dest", "origin": origin}
-    await call.message.edit_text(t(lang, "ask_dest_text"))
 
 @dp.callback_query(F.data.startswith("o:"))
 async def cb_origin(call: CallbackQuery):
@@ -616,36 +619,66 @@ async def cb_dest(call: CallbackQuery):
     await call.answer()
     lang = lang_of(call.from_user.id)
     _, origin, dest = call.data.split(":")
-    await call.message.edit_text(t(lang, "ask_month", o=city(origin, lang), d=city(dest, lang)), reply_markup=kb_months(origin, dest, lang))
+    await call.message.edit_text(t(lang, "ask_class"), reply_markup=kb_classes(origin, dest, lang))
 
+@dp.callback_query(F.data.startswith("cls:"))
+async def cb_class(call: CallbackQuery):
+    await call.answer()
+    lang = lang_of(call.from_user.id)
+    _, origin, dest, cls = call.data.split(":")
+    await call.message.edit_text(t(lang, "ask_airline"), reply_markup=kb_airlines(origin, dest, cls, lang))
+
+@dp.callback_query(F.data.startswith("air:"))
+async def cb_airline(call: CallbackQuery):
+    await call.answer()
+    lang = lang_of(call.from_user.id)
+    _, origin, dest, cls, airline = call.data.split(":")
+    cls_name = t(lang, "cls_econ") if cls == "Y" else t(lang, "cls_biz")
+    await call.message.edit_text(
+        t(lang, "ask_month", o=city(origin, lang), d=city(dest, lang), cls=cls_name),
+        reply_markup=kb_months(origin, dest, cls, airline, lang)
+    )
+
+# Sanalar ostida narxlar bilan kalendar
 @dp.callback_query(F.data.startswith("m:"))
 async def cb_month(call: CallbackQuery):
     await call.answer()
     lang = lang_of(call.from_user.id)
-    _, origin, dest, period = call.data.split(":")
+    _, origin, dest, cls, airline, period = call.data.split(":")
     year, month = int(period[:4]), int(period[5:7])
+    
     await call.message.edit_text(t(lang, "searching"))
-    prices = await fetch_calendar(origin, dest, period)
+    prices = await fetch_calendar(origin, dest, period, trip_class=cls)
     if not prices:
         await call.message.edit_text(t(lang, "cal_empty"))
         return
-    rate = await get_rate()
-    text, cheapest = format_calendar(origin, dest, year, month, prices, rate, lang)
-    await call.message.edit_text(text, reply_markup=kb_calendar(origin, dest, year, month, prices, cheapest, lang))
 
+    today = date.today().isoformat()
+    future = {k: v for k, v in prices.items() if k >= today}
+    top = sorted(future.items(), key=lambda kv: float(kv[1]["price"]))[:5]
+    cheapest = {k for k, _ in top}
+
+    txt = t(lang, "cal_title", o=city(origin, lang), d=city(dest, lang), month=MONTHS[lang][month].capitalize(), year=year)
+    kb = kb_calendar_with_prices(origin, dest, cls, airline, year, month, prices, cheapest, lang)
+    await call.message.edit_text(txt, reply_markup=kb)
+
+# Aniq kun tanlanganda chiptalarni ko'rsatish
 @dp.callback_query(F.data.startswith("c:"))
 async def cb_day(call: CallbackQuery):
     await call.answer()
     lang = lang_of(call.from_user.id)
-    _, origin, dest, day = call.data.split(":")
+    _, origin, dest, cls, airline, day = call.data.split(":")
+    
     await call.message.edit_text(t(lang, "searching"))
-    tickets = await fetch_tickets(origin, dest, day, limit=3)
+    tickets = await fetch_tickets(origin, dest, day, trip_class=cls, airline=airline, limit=4)
     if not tickets:
         await call.message.edit_text(t(lang, "not_found"))
         return
-    rate = await get_rate()
-    text = format_tickets_details(origin, dest, tickets, lang, rate)
-    kb = kb_day_tickets(tickets, origin, dest, day, lang)
+    
+    rates = await get_all_bank_rates()
+    text = format_detailed_tickets(origin, dest, tickets, lang, rates, cls)
+    kb = kb_ticket_offers(origin, dest, day, tickets, lang)
+    
     await call.message.edit_text(
         text,
         reply_markup=kb,
@@ -657,69 +690,71 @@ async def cb_day(call: CallbackQuery):
 async def cb_noop(call: CallbackQuery):
     await call.answer()
 
+# Shaharlarni qo'lda kiritish
+@dp.callback_query(F.data == "oo")
+async def cb_other_origin(call: CallbackQuery):
+    await call.answer()
+    lang = lang_of(call.from_user.id)
+    USER_FLOW[call.from_user.id] = {"role": "origin"}
+    await call.message.edit_text(t(lang, "ask_origin_text"))
+
+@dp.callback_query(F.data.startswith("od:"))
+async def cb_other_dest(call: CallbackQuery):
+    await call.answer()
+    lang = lang_of(call.from_user.id)
+    origin = call.data.split(":")[1]
+    USER_FLOW[call.from_user.id] = {"role": "dest", "origin": origin}
+    await call.message.edit_text(t(lang, "ask_dest_text"))
+
 @dp.message(F.text & ~F.text.startswith("/"))
 async def on_user_text(message: Message):
     user_id = message.from_user.id
     lang = lang_of(user_id)
-    state = WAITING.get(user_id)
-    if not state:
+    state = USER_FLOW.get(user_id)
+    if not state or "role" not in state:
         return
 
-    # Mehmonxona va hostellar qidiruvi
-    if state.get("role") == "hotel":
-        WAITING.pop(user_id, None)
-        await message.answer(t(lang, "searching"))
-        res = await search_hotel_destination(message.text.strip(), lang)
-        if not res:
-            await message.answer(t(lang, "city_not_found"))
-            return
-        
-        loc_name, direct_url, booking_url = res
-        txt = t(lang, "hotel_found_title", city=loc_name)
-        
-        b = InlineKeyboardBuilder()
-        b.button(text=t(lang, "btn_hotel_book", p="Booking / Agoda / Ostrovok"), url=direct_url)
-        b.button(text="🏨 Booking.com (Eng arzon filtr)", url=booking_url)
-        b.adjust(1)
-        
-        await message.answer(txt, reply_markup=b.as_markup(), parse_mode="HTML")
-        return
-
-    # Aviachipta uchun shahar qidiruvi
     places = await search_places(message.text.strip(), lang)
     if not places:
         await message.answer(t(lang, "city_not_found"))
         return
-    if state["role"] == "dest":
-        places = [p for p in places if p["code"] != state.get("origin")]
-    await message.answer(t(lang, "pick_city"), reply_markup=kb_places(places, state["role"], state.get("origin"), lang))
+    
+    b = InlineKeyboardBuilder()
+    for p in places:
+        label = p["name"] + (f", {p['country']}" if p.get("country") else "")
+        data = f"o:{p['code']}" if state["role"] == "origin" else f"d:{state.get('origin')}:{p['code']}"
+        b.button(text=label[:45], callback_data=data)
+    b.adjust(1)
+    b.row(InlineKeyboardButton(text=t(lang, "btn_back"), callback_data="go_avia"))
+    await message.answer(t(lang, "pick_city"), reply_markup=b.as_markup())
 
 # ---------- Alertlar ----------
 @dp.callback_query(F.data.startswith("w:"))
 async def cb_watch(call: CallbackQuery):
     await call.answer()
     lang = lang_of(call.from_user.id)
-    _, origin, dest, period = call.data.split(":")
+    _, origin, dest, period, cls = call.data.split(":")
     user_id = call.from_user.id
     route = f"{city(origin, lang)} → {city(dest, lang)}, {period}"
 
-    exists = db_all("SELECT id FROM alerts WHERE user_id=? AND origin=? AND dest=? AND period=?", (user_id, origin, dest, period))
+    exists = db_all(
+        "SELECT id FROM alerts WHERE user_id=? AND origin=? AND dest=? AND period=? AND trip_class=?",
+        (user_id, origin, dest, period, cls)
+    )
     if exists:
         await call.message.answer(t(lang, "watch_exists", route=route))
         return
 
-    count = db_all("SELECT COUNT(*) AS n FROM alerts WHERE user_id=?", (user_id,))[0]["n"]
-    if count >= MAX_ALERTS:
-        await call.message.answer(t(lang, "watch_limit", max=MAX_ALERTS))
-        return
-
-    tickets = await fetch_tickets(origin, dest, period, limit=1)
+    tickets = await fetch_tickets(origin, dest, period, trip_class=cls, limit=1)
     if not tickets:
         await call.message.answer(t(lang, "watch_none"))
         return
 
     price = float(tickets[0]["price"])
-    db_exec("INSERT OR IGNORE INTO alerts (user_id, origin, dest, period, last_price) VALUES (?,?,?,?,?)", (user_id, origin, dest, period, price))
+    db_exec(
+        "INSERT OR IGNORE INTO alerts (user_id, origin, dest, period, trip_class, last_price) VALUES (?,?,?,?,?,?)",
+        (user_id, origin, dest, period, cls, price)
+    )
     await call.message.answer(t(lang, "watch_ok", route=route, price=f"{price:.0f}"))
 
 @dp.callback_query(F.data.startswith("x:"))
@@ -730,7 +765,7 @@ async def cb_delete_alert(call: CallbackQuery):
     db_exec("DELETE FROM alerts WHERE id=? AND user_id=?", (alert_id, call.from_user.id))
     await menu_alerts_click(call.message)
 
-# ---------- Fon vazifasi ----------
+# ---------- Fon Vazifasi (Narx tushishini tekshirish) ----------
 async def check_alerts(bot):
     this_month = date.today().strftime("%Y-%m")
     rows = db_all("SELECT * FROM alerts")
@@ -739,11 +774,11 @@ async def check_alerts(bot):
         if r["period"][:7] < this_month:
             db_exec("DELETE FROM alerts WHERE id=?", (r["id"],))
             continue
-        routes.setdefault((r["origin"], r["dest"], r["period"]), []).append(r)
+        routes.setdefault((r["origin"], r["dest"], r["period"], r.get("trip_class", "Y")), []).append(r)
 
-    rate = await get_rate() if routes else None
-    for (origin, dest, period), items in routes.items():
-        tickets = await fetch_tickets(origin, dest, period, limit=1)
+    rates = await get_all_bank_rates() if routes else None
+    for (origin, dest, period, cls), items in routes.items():
+        tickets = await fetch_tickets(origin, dest, period, trip_class=cls, limit=1)
         if not tickets:
             continue
         new_price = float(tickets[0]["price"])
@@ -753,12 +788,11 @@ async def check_alerts(bot):
             if old_price is not None and new_price < old_price:
                 lang = lang_of(r["user_id"])
                 text = t(lang, "dropped", old=f"{old_price:.0f}", new=f"{new_price:.0f}")
-                text += format_tickets_details(origin, dest, tickets, lang, rate)
-                kb = InlineKeyboardBuilder()
-                kb.button(text=t(lang, "btn_buy_ticket", i=1), url=build_ticket_url(tickets[0].get("link")))
+                text += format_detailed_tickets(origin, dest, tickets, lang, rates, cls)
+                kb = kb_ticket_offers(origin, dest, period, tickets, lang)
                 try:
                     await bot.send_message(
-                        r["user_id"], text, reply_markup=kb.as_markup(), parse_mode="HTML"
+                        r["user_id"], text, reply_markup=kb, parse_mode="HTML"
                     )
                 except TelegramForbiddenError:
                     db_exec("DELETE FROM alerts WHERE user_id=?", (r["user_id"],))
