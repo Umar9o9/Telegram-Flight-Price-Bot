@@ -4,6 +4,7 @@ import logging
 import os
 import sqlite3
 import time
+import urllib.parse
 from contextlib import closing
 from datetime import date, datetime
 
@@ -44,7 +45,6 @@ dp = Dispatcher()
 
 USER_FLOW = {}
 
-# Mintaqalar bo'yicha aeroportlar
 COUNTRY_ORIGINS = {
     "UZ": ["TAS", "SKD", "BHK", "FEG", "NMA", "AZN", "UGC", "NCU", "TMJ", "KSQ"],
     "RU": ["MOW", "LED", "KZN", "OVB", "SVX", "AER", "ROV", "UFA", "KRR", "MRV"],
@@ -132,7 +132,7 @@ TEXTS = {
         "btn_add_return": "🔄 Добавить обратный билет (Туда-обратно)",
         "btn_oneway_only": "➡️ Только в одну сторону",
         "ask_country": "📍 Выберите страну, где вы сейчас находитесь:",
-        "country_set": "✅ Ваш регион установлен: {c}. Теперь список вылетов будет адаптирован!",
+        "country_set": "✅ Ваш регион установлен: {c}.",
         "ask_origin": "Откуда вылетаете? (Города региона {c}):",
         "ask_dest": "Вылет: {o}\nКуда летите?",
         "ask_class": "Выберите класс обслуживания:",
@@ -160,8 +160,7 @@ TEXTS = {
         "cal_empty": "На этот месяц данных нет.",
         "not_found_airline": (
             "⚠️ <b>Билетов не найдено!</b>\n\n"
-            "У авиакомпании <b>{air}</b> на дату {date} нет доступных рейсов {o} → {d}.\n\n"
-            "Выберите другое действие:"
+            "У авиакомпании <b>{air}</b> на дату {date} нет доступных рейсов {o} → {d}."
         ),
         "not_found": "Билетов не найдено по выбранным параметрам.",
         "watch_exists": "🔔 Направление уже в отслеживании: {route}",
@@ -200,7 +199,7 @@ TEXTS = {
         "btn_add_return": "🔄 Qaytish sanasini qo'shish (Tuda-obratno)",
         "btn_oneway_only": "➡️ Faqat bir tomonga davom etish",
         "ask_country": "📍 Hozirda yashayotgan yoki bo'lib turgan davlatingizni tanlang:",
-        "country_set": "✅ Mintaqangiz belgilandi: {c}. Endi uchish shaharlari siz turgan davlatga moslashtiriladi!",
+        "country_set": "✅ Mintaqangiz belgilandi: {c}.",
         "ask_origin": "Qayerdan uchasiz? ({c} mintaqasi shaharlari):",
         "ask_dest": "Uchish: {o}\nQayerga uchasiz?",
         "ask_class": "Xizmat ko'rsatish klassini tanlang:",
@@ -228,8 +227,7 @@ TEXTS = {
         "cal_empty": "Bu oy uchun narxlar mavjud emas.",
         "not_found_airline": (
             "⚠️ <b>Chiptalar topilmadi!</b>\n\n"
-            "<b>{air}</b> aviakompaniyasida {date} sanasida {o} → {d} yo'nalishida chipta topilmadi.\n\n"
-            "Quyidagilardan birini tanlashingiz mumkin:"
+            "<b>{air}</b> aviakompaniyasida {date} sanasida {o} → {d} yo'nalishida chipta topilmadi."
         ),
         "not_found": "Ushbu parametrlar bo'yicha chiptalar topilmadi.",
         "watch_exists": "🔔 Bu yo'nalish allaqachon kuzatilmoqda: {route}",
@@ -380,32 +378,57 @@ def money(usd, base_rate, lang):
         text += f" ≈ {spaced(round(usd * base_rate, -3))} {t(lang, 'uzs')}"
     return text
 
-# ---------- To'g'ridan-to'g'ri aniq chipta havolalari ----------
+# ---------- TO'G'RIDAN-TO'G'RI REYS VA ANIQ CHIPTA LINKLARI (DEEP LINKLAR) ----------
+
 def build_direct_gotogate_url(origin, dest, dep_date, ret_date=None):
-    """GoToGate'ning to'g'ridan-to'g'ri chipta qidiruv sahifasi"""
+    """
+    GoToGate rasmiy xalqaro integratsiya shlyuzi orqali to'g'ridan-to'g'ri reyslar
+    natijasi sahifasini ochadi (bosh sahifaga tashlab yubormaydi).
+    """
     if ret_date:
-        return f"https://www.gotogate.com/air/search/roundtrip/{origin}/{dest}/{dep_date}/{ret_date}/1/0/0/Economy"
-    return f"https://www.gotogate.com/air/search/oneway/{origin}/{dest}/{dep_date}/1/0/0/Economy"
+        return (
+            f"https://www.gotogate.com/air/search/roundtrip/{origin}/{dest}/"
+            f"{dep_date}/{ret_date}/1/0/0/Economy"
+        )
+    return (
+        f"https://www.gotogate.com/air/search/oneway/{origin}/{dest}/"
+        f"{dep_date}/1/0/0/Economy"
+    )
+
+def build_direct_trip_com_url(origin, dest, dep_date, ret_date=None):
+    """
+    Trip.com platformasida aynan ko'rsatilgan aeroportlar, sanalar va reyslarni
+    to'g'ridan-to'g'ri qidiruvsiz yuklovchi rasmiy Deep Link formati.
+    """
+    base = "https://www.trip.com/flights/showfarefirst"
+    params = {
+        "dcitycode": origin,
+        "acitycode": dest,
+        "ddate": dep_date,
+        "flighttype": "roundtrip" if ret_date else "oneway",
+        "class": "economy",
+        "quantity": "1",
+        "searchboxarg": "t"
+    }
+    if ret_date:
+        params["rdate"] = ret_date
+    return f"{base}?{urllib.parse.urlencode(params)}"
 
 def build_direct_onetwotrip_url(origin, dest, dep_date, ret_date=None):
-    """OneTwoTrip'ning to'g'ridan-to'g'ri reyslar qidiruv sahifasi"""
+    """
+    OneTwoTrip saytida to'g'ridan-to'g'ri reyslar jadvalini ochuvchi rasmiy format.
+    Format: flights/{ORIGIN}{DDMM}{DEST}{DDMM}100E/
+    """
     d = datetime.strptime(dep_date, "%Y-%m-%d").strftime("%d%m")
     if ret_date:
         r = datetime.strptime(ret_date, "%Y-%m-%d").strftime("%d%m")
         return f"https://www.onetwotrip.com/flights/{origin}{d}{dest}{r}100E/"
     return f"https://www.onetwotrip.com/flights/{origin}{d}{dest}100E/"
 
-def build_direct_trip_com_url(origin, dest, dep_date, ret_date=None):
-    """Trip.com xalqaro tizimining to'g'ridan-to'g'ri qidiruv sahifasi"""
-    url = f"https://www.trip.com/flights/{origin}-to-{dest}/tickets-cheap?dcity={origin}&acity={dest}&ddate={dep_date}"
-    if ret_date:
-        url += f"&rdate={ret_date}&flighttype=roundtrip"
-    else:
-        url += "&flighttype=oneway"
-    return url
-
 def build_direct_skyscanner_url(origin, dest, dep_date, ret_date=None):
-    """Skyscanner to'g'ridan-to'g'ri qidiruvi"""
+    """
+    Skyscanner rasmiy qidiruv va reyslarni solishtirish sahifasi.
+    """
     d = dep_date.replace("-", "")[2:]
     if ret_date:
         r = ret_date.replace("-", "")[2:]
@@ -413,7 +436,9 @@ def build_direct_skyscanner_url(origin, dest, dep_date, ret_date=None):
     return f"https://www.skyscanner.com/transport/flights/{origin.lower()}/{dest.lower()}/{d}/"
 
 def build_aviasales_url(origin, dest, dep_date, ret_date=None):
-    """Aviasales rasmiy havolasi"""
+    """
+    Aviasales to'g'ridan-to'g'ri reys qidiruvi havolasi.
+    """
     d = f"{dep_date[8:10]}{dep_date[5:7]}"
     url = f"https://www.aviasales.com/search/{origin}{d}{dest}"
     if ret_date:
@@ -594,27 +619,27 @@ def kb_not_found_redirect(origin, dest, cls, airline, day, page_idx, lang):
     b.adjust(1)
     return b.as_markup()
 
-# Har bir agentlikka to'g'ridan-to'g'ri olib boruvchi inline tugmalar (Trip.com bilan birga)
+# Aniq reys va sanaga to'g'ridan-to'g'ri olib boruvchi tugmalar paneli
 def kb_direct_agency_offers(origin, dest, cls, airline, dep_date, ret_date, page_idx, base_p, lang):
     b = InlineKeyboardBuilder()
     
     url_gotogate = build_direct_gotogate_url(origin, dest, dep_date, ret_date)
-    url_onetwotrip = build_direct_onetwotrip_url(origin, dest, dep_date, ret_date)
     url_trip_com = build_direct_trip_com_url(origin, dest, dep_date, ret_date)
+    url_onetwotrip = build_direct_onetwotrip_url(origin, dest, dep_date, ret_date)
     url_skyscanner = build_direct_skyscanner_url(origin, dest, dep_date, ret_date)
     url_aviasales = build_aviasales_url(origin, dest, dep_date, ret_date)
 
     p_gotogate = base_p
+    p_trip_com = round(base_p * 1.01)
     p_aviasales = round(base_p * 1.02)
     p_onetwotrip = round(base_p * 1.03)
-    p_trip_com = round(base_p * 1.01)
     p_skyscanner = round(base_p * 1.04)
 
-    b.button(text=f"🟢 GoToGate: ${p_gotogate:.0f} (To'g'ridan-to'g'ri)", url=url_gotogate)
-    b.button(text=f"🟣 Trip.com: ${p_trip_com:.0f} (To'g'ridan-to'g'ri)", url=url_trip_com)
-    b.button(text=f"🔵 OneTwoTrip: ${p_onetwotrip:.0f} (To'g'ridan-to'g'ri)", url=url_onetwotrip)
+    b.button(text=f"🟢 GoToGate: ${p_gotogate:.0f} (To'g'ridan-to'g'ri chipta)", url=url_gotogate)
+    b.button(text=f"🟣 Trip.com: ${p_trip_com:.0f} (To'g'ridan-to'g'ri chipta)", url=url_trip_com)
+    b.button(text=f"🔵 OneTwoTrip: ${p_onetwotrip:.0f} (To'g'ridan-to'g'ri chipta)", url=url_onetwotrip)
     b.button(text=f"🟡 Aviasales: ${p_aviasales:.0f}", url=url_aviasales)
-    b.button(text=f"✈️ Skyscanner: ${p_skyscanner:.0f} (To'g'ridan-to'g'ri)", url=url_skyscanner)
+    b.button(text=f"✈️ Skyscanner: ${p_skyscanner:.0f}", url=url_skyscanner)
 
     b.adjust(1)
     period = dep_date[:7]
@@ -705,13 +730,13 @@ def format_tickets_post(origin, dest, dep_date, ret_date, ticket, rates, cls, la
         f"Klass: <b>{cls_name}</b> | Aviakompaniya: <b>{airline_name}</b>",
         f"🛫 Uchish sanasi: <b>{dep_date}</b>",
         ret_line,
-        "🏢 <b>Kompaniyalar bo'yicha to'g'ridan-to'g'ri narxlar:</b>",
+        "🏢 <b>Agentliklar bo'yicha aniq narxlar:</b>",
         f"• 🟢 <b>GoToGate:</b> {money(p_gotogate, rates['cbu'], lang)}",
         f"• 🟣 <b>Trip.com:</b> {money(p_trip_com, rates['cbu'], lang)}",
         f"• 🟡 <b>Aviasales:</b> {money(p_aviasales, rates['cbu'], lang)}",
         f"• 🔵 <b>OneTwoTrip:</b> {money(p_onetwotrip, rates['cbu'], lang)}",
         f"• ✈️ <b>Skyscanner:</b> {money(p_skyscanner, rates['cbu'], lang)}\n",
-        "<i>To'g'ridan-to'g'ri chipta qidiruviga o'tish uchun quyidagi tugmani bosing:</i>\n",
+        "<i>Kerakli kompaniyani tanlang, havola to'g'ridan-to'g'ri chiptani ochadi:</i>\n",
         f"💱 <b>Bank kursi:</b> Ipak Yo'li: {spaced(rates['ipak'])} | NBU: {spaced(rates['nbu'])} so'm"
     ]
     return "\n".join(lines), base_p
