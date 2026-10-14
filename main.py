@@ -59,7 +59,6 @@ DEST_CODES = [
     "IST", "AYT", "DXB", "JED", "MOW", "LED", "ALA", "TBS", "BAK"
 ]
 
-# Shaharlar va aeroportlar yoniga rasmiy davlat bayroqlari
 CITY = {
     "ru": {
         "TAS": "🇺🇿 Ташкент", "SKD": "🇺🇿 Самарканд", "BHK": "🇺🇿 Бухара", "FEG": "🇺🇿 Фергана",
@@ -91,18 +90,20 @@ CITY = {
     },
 }
 
+# Aviakompaniyalar logotiplari va belgilari
 AIRLINES_LIST = {
-    "HY": "Uzbekistan Airways",
-    "TK": "Turkish Airlines",
-    "FZ": "Flydubai",
-    "SU": "Aeroflot",
-    "PC": "Pegasus",
-    "LH": "Lufthansa",
-    "LO": "LOT Polish Airlines",
-    "QR": "Qatar Airways",
-    "EK": "Emirates",
-    "J9": "Jazeera Airways",
-    "G9": "Air Arabia"
+    "HY": "🇺🇿 ✈️ Uzbekistan Airways",
+    "TK": "🇹🇷 🦅 Turkish Airlines",
+    "FZ": "🇦🇪 ⚡ Flydubai",
+    "EK": "🇦🇪 👑 Emirates",
+    "QR": "🇶🇦 🌟 Qatar Airways",
+    "SU": "🇷🇺 🪶 Aeroflot",
+    "PC": "🇹🇷 🐎 Pegasus Airlines",
+    "LH": "🇩🇪 🕊️ Lufthansa",
+    "LO": "🇵🇱 🦩 LOT Polish Airlines",
+    "J9": "🇰🇼 🌊 Jazeera Airways",
+    "G9": "🇦🇪 🔴 Air Arabia",
+    "KC": "🇰🇿 ☀️ Air Astana"
 }
 
 MONTHS = {
@@ -115,8 +116,8 @@ TEXTS = {
         "help": (
             "✈️ <b>Международный поиск авиабилетов</b>\n\n"
             "• Рейсы в одну сторону и <b>Туда-обратно</b>.\n"
-            "• Прямые ссылки на покупку: <b>GoToGate, Trip.com, OneTwoTrip, Aviasales, Skyscanner</b>.\n"
-            "• Выберите домашний регион: города подстроятся автоматически.\n\n"
+            "• Проверенные сервисы: <b>Trip.com, Aviasales, Skyscanner, Google Flights</b>.\n"
+            "• Точные курсы валют банков Узбекистана.\n\n"
             "Выберите пункт меню ниже:"
         ),
         "menu_avia": "✈️ Найти авиабилет",
@@ -146,7 +147,7 @@ TEXTS = {
         "ask_dest_text": "Введите название любого города назначения:",
         "pick_city": "Выберите подходящий город из списка:",
         "city_not_found": "Не удалось найти город. Попробуйте написать иначе.",
-        "searching": "🔎 Ищу лучшие предложения и проверяю агентства...",
+        "searching": "🔎 Ищу лучшие предложения и проверяю актуальные цены...",
         "direct": "Прямой рейс",
         "stops": "Пересадок: {n}",
         "uzs": "сум",
@@ -182,7 +183,7 @@ TEXTS = {
         "help": (
             "✈️ <b>Xalqaro aviachiptalar qidiruv tizimi</b>\n\n"
             "• Bir tomonga va <b>Borish-qaytish (Tuda-obratno)</b> chiptalari.\n"
-            "• <b>GoToGate, Trip.com, OneTwoTrip, Aviasales, Skyscanner</b> platformalariga to'g'ridan-to'g'ri havolalar.\n"
+            "• Ishonchli servislar: <b>Trip.com, Aviasales, Skyscanner, Google Flights</b>.\n"
             "• Yashash mintaqangizga moslashuvchi qulay qidiruv.\n\n"
             "Boshlash uchun quyidagi menyudan foydalaning:"
         ),
@@ -190,7 +191,7 @@ TEXTS = {
         "menu_alerts": "🔔 Xabarnomalarim",
         "menu_rates": "💱 Bank kurslari",
         "menu_country": "📍 Mintaqam",
-        "menu_lang": "🌐 Til / Язык",
+        "menu_lang": "🌐 Til / Yaзык",
         "btn_back": "⬅️ Orqaga",
         "btn_new": "🔁 Yangi qidiruv",
         "btn_watch": "🔔 Narxni kuzatish",
@@ -213,7 +214,7 @@ TEXTS = {
         "ask_dest_text": "Istalgan borish shahrini yozing:",
         "pick_city": "Ro'yxatdan kerakli aeroportni tanlang:",
         "city_not_found": "Bunday shahar topilmadi. Qayta yozib ko'ring.",
-        "searching": "🔎 Agentliklar va aviakompaniyalardan narxlar qidirilmoqda...",
+        "searching": "🔎 Aviakompaniyalardan eng so'nggi narxlar qidirilmoqda...",
         "direct": "To'g'ridan-to'g'ri reys",
         "stops": "Almashinuvlar: {n} ta",
         "uzs": "so'm",
@@ -380,21 +381,10 @@ def money(usd, base_rate, lang):
         text += f" ≈ {spaced(round(usd * base_rate, -3))} {t(lang, 'uzs')}"
     return text
 
-# ---------- TO'G'RIDAN-TO'G'RI REYS VA ANIQ CHIPTA LINKLARI (DEEP LINKLAR) ----------
-
-def build_direct_gotogate_url(origin, dest, dep_date, ret_date=None):
-    """
-    GoToGate: Xalqaro to'g'ridan-to'g'ri reyslar sessiyasi shlyuzi.
-    Aniq sana va yo'nalish bo'yicha to'g'ridan-to'g'ri natijalar jadvalini ochadi.
-    """
-    if ret_date:
-        return f"https://www.gotogate.com/rf/result?searchParams={origin}_{dest}_{dep_date}_{ret_date}_1_0_0_Economy"
-    return f"https://www.gotogate.com/rf/result?searchParams={origin}_{dest}_{dep_date}_1_0_0_Economy"
+# ---------- TO'G'RIDAN-TO'G'RI VA ISHONCHLI PLATFORMA HAVOLALARI ----------
 
 def build_direct_trip_com_url(origin, dest, dep_date, ret_date=None):
-    """
-    Trip.com platformasida aniq ko'rsatilgan sanalar va reyslarni to'g'ridan-to'g'ri yuklovchi havola.
-    """
+    """Trip.com to'g'ridan-to'g'ri reyslar jadvalini yuklovchi havola"""
     base = "https://www.trip.com/flights/showfarefirst"
     params = {
         "dcitycode": origin,
@@ -409,36 +399,22 @@ def build_direct_trip_com_url(origin, dest, dep_date, ret_date=None):
         params["rdate"] = ret_date
     return f"{base}?{urllib.parse.urlencode(params)}"
 
-def build_direct_onetwotrip_url(origin, dest, dep_date, ret_date=None):
-    """
-    OneTwoTrip: Qidiruvsiz to'g'ridan-to'g'ri tanlangan sanadagi reyslarni ochuvchi rasmiy veb-format.
-    Format: https://www.onetwotrip.com/flights/?from={origin}&to={dest}&date={dep_date}&cs=E
-    """
-    params = {
-        "from": origin,
-        "to": dest,
-        "date": dep_date,
-        "cs": "E",
-        "ad": "1"
-    }
-    if ret_date:
-        params["returnDate"] = ret_date
-    return f"https://www.onetwotrip.com/flights/?{urllib.parse.urlencode(params)}"
-
 def build_direct_skyscanner_url(origin, dest, dep_date, ret_date=None):
-    """
-    Skyscanner rasmiy qidiruv va reyslarni solishtirish sahifasi.
-    """
+    """Skyscanner aniq sanadagi barcha sotuvchilarni solishtirish sahifasi"""
     d = dep_date.replace("-", "")[2:]
     if ret_date:
         r = ret_date.replace("-", "")[2:]
         return f"https://www.skyscanner.com/transport/flights/{origin.lower()}/{dest.lower()}/{d}/{r}/"
     return f"https://www.skyscanner.com/transport/flights/{origin.lower()}/{dest.lower()}/{d}/"
 
+def build_google_flights_url(origin, dest, dep_date, ret_date=None):
+    """Google Flights to'g'ridan-to'g'ri rasmiy narxlar qidiruvi"""
+    if ret_date:
+        return f"https://www.google.com/travel/flights?q=Flights%20to%20{dest}%20from%20{origin}%20on%20{dep_date}%20through%20{ret_date}"
+    return f"https://www.google.com/travel/flights?q=Flights%20to%20{dest}%20from%20{origin}%20on%20{dep_date}"
+
 def build_aviasales_url(origin, dest, dep_date, ret_date=None):
-    """
-    Aviasales to'g'ridan-to'g'ri reys qidiruvi havolasi.
-    """
+    """Aviasales eng arzon agentliklarni topib beruvchi sahifasi"""
     d = f"{dep_date[8:10]}{dep_date[5:7]}"
     url = f"https://www.aviasales.com/search/{origin}{d}{dest}"
     if ret_date:
@@ -619,27 +595,19 @@ def kb_not_found_redirect(origin, dest, cls, airline, day, page_idx, lang):
     b.adjust(1)
     return b.as_markup()
 
-# Aniq reys va sanaga to'g'ridan-to'g'ri olib boruvchi tugmalar paneli
+# Faqat real ishlaydigan platformalarning to'g'ridan-to'g'ri havolalari
 def kb_direct_agency_offers(origin, dest, cls, airline, dep_date, ret_date, page_idx, base_p, lang):
     b = InlineKeyboardBuilder()
     
-    url_gotogate = build_direct_gotogate_url(origin, dest, dep_date, ret_date)
     url_trip_com = build_direct_trip_com_url(origin, dest, dep_date, ret_date)
-    url_onetwotrip = build_direct_onetwotrip_url(origin, dest, dep_date, ret_date)
     url_skyscanner = build_direct_skyscanner_url(origin, dest, dep_date, ret_date)
+    url_google = build_google_flights_url(origin, dest, dep_date, ret_date)
     url_aviasales = build_aviasales_url(origin, dest, dep_date, ret_date)
 
-    p_gotogate = base_p
-    p_trip_com = round(base_p * 1.01)
-    p_aviasales = round(base_p * 1.02)
-    p_onetwotrip = round(base_p * 1.03)
-    p_skyscanner = round(base_p * 1.04)
-
-    b.button(text=f"🟢 GoToGate: ${p_gotogate:.0f} (To'g'ridan-to'g'ri chipta)", url=url_gotogate)
-    b.button(text=f"🟣 Trip.com: ${p_trip_com:.0f} (To'g'ridan-to'g'ri chipta)", url=url_trip_com)
-    b.button(text=f"🔵 OneTwoTrip: ${p_onetwotrip:.0f} (To'g'ridan-to'g'ri chipta)", url=url_onetwotrip)
-    b.button(text=f"🟡 Aviasales: ${p_aviasales:.0f}", url=url_aviasales)
-    b.button(text=f"✈️ Skyscanner: ${p_skyscanner:.0f}", url=url_skyscanner)
+    b.button(text=f"🟣 Trip.com: ${base_p:.0f} (To'g'ridan-to'g'ri chipta)", url=url_trip_com)
+    b.button(text=f"🟡 Aviasales: ${base_p:.0f}", url=url_aviasales)
+    b.button(text=f"✈️ Skyscanner (Jonli narxlar)", url=url_skyscanner)
+    b.button(text=f"🔵 Google Flights (Kompaniyalar narxi)", url=url_google)
 
     b.adjust(1)
     period = dep_date[:7]
@@ -706,20 +674,19 @@ async def search_places(term, lang):
                 break
     return result
 
-def format_tickets_post(origin, dest, dep_date, ret_date, ticket, rates, cls, lang):
+def format_tickets_post(origin, dest, dep_date, ret_date, ticket, return_ticket, rates, cls, lang):
     cls_name = t(lang, "cls_econ") if cls == "Y" else t(lang, "cls_biz")
     airline_code = ticket.get("airline", "Avia")
-    airline_name = AIRLINES_LIST.get(airline_code, airline_code)
+    airline_name = AIRLINES_LIST.get(airline_code, f"✈️ {airline_code}")
     
-    base_p = float(ticket.get("price", 0))
-    if ret_date:
-        base_p = base_p * 1.85
+    # Real narxni hisoblash (sun'iy ko'paytirishlarsiz)
+    dep_price = float(ticket.get("price", 0))
+    ret_price = float(return_ticket.get("price", 0)) if return_ticket else 0
+    total_price = (dep_price + ret_price) if ret_date and ret_price > 0 else (dep_price * 2 if ret_date else dep_price)
 
-    p_gotogate = base_p
-    p_trip_com = round(base_p * 1.01)
-    p_aviasales = round(base_p * 1.02)
-    p_onetwotrip = round(base_p * 1.03)
-    p_skyscanner = round(base_p * 1.04)
+    transfers = ticket.get("transfers", 0)
+    flight_type = t(lang, "direct") if transfers == 0 else t(lang, "stops", n=transfers)
+    dep_time = str(ticket.get("departure_at", "")).replace("T", " ")[:16]
 
     mode_title = "🔄 <b>Borish-Qaytish (Tuda-obratno)</b>" if ret_date else "➡️ <b>Bir tomonga</b>"
     ret_line = f"📅 Qaytish sanasi: <b>{ret_date}</b>\n" if ret_date else ""
@@ -728,18 +695,18 @@ def format_tickets_post(origin, dest, dep_date, ret_date, ticket, rates, cls, la
         f"{mode_title}\n"
         f"✈️ <b>{city(origin, lang)} ⇄ {city(dest, lang)}</b>",
         f"Klass: <b>{cls_name}</b> | Aviakompaniya: <b>{airline_name}</b>",
-        f"🛫 Uchish sanasi: <b>{dep_date}</b>",
+        f"🛫 Uchish vaqti: <b>{dep_time}</b> | 🔄 {flight_type}",
         ret_line,
-        "🏢 <b>Agentliklar bo'yicha aniq narxlar:</b>",
-        f"• 🟢 <b>GoToGate:</b> {money(p_gotogate, rates['cbu'], lang)}",
-        f"• 🟣 <b>Trip.com:</b> {money(p_trip_com, rates['cbu'], lang)}",
-        f"• 🟡 <b>Aviasales:</b> {money(p_aviasales, rates['cbu'], lang)}",
-        f"• 🔵 <b>OneTwoTrip:</b> {money(p_onetwotrip, rates['cbu'], lang)}",
-        f"• ✈️ <b>Skyscanner:</b> {money(p_skyscanner, rates['cbu'], lang)}\n",
-        "<i>Kerakli kompaniyani tanlang, havola to'g'ridan-to'g'ri chiptani ochadi:</i>\n",
+        f"💵 <b>Chipta narxi: {money(total_price, rates['cbu'], lang)}</b>\n",
+        "🏢 <b>Xarid qilish uchun platformalar:</b>",
+        "• 🟣 <b>Trip.com</b> (Aniq reys va sanaga to'g'ridan-to'g'ri o'tish)",
+        "• 🟡 <b>Aviasales</b> (Barcha agentliklar narxlari)",
+        "• ✈️ <b>Skyscanner</b> (Jonli taqqoslash)",
+        "• 🔵 <b>Google Flights</b> (Rasmiy aviakompaniyalar narxlari)\n",
+        "<i>Kerakli platformani tanlang, havola to'g'ridan-to'g'ri chiptani ochadi:</i>\n",
         f"💱 <b>Bank kursi:</b> Ipak Yo'li: {spaced(rates['ipak'])} | NBU: {spaced(rates['nbu'])} so'm"
     ]
-    return "\n".join(lines), base_p
+    return "\n".join(lines), total_price
 
 # ---------- Handlers ----------
 @dp.message(CommandStart())
@@ -910,7 +877,7 @@ async def cb_show_oneway(call: CallbackQuery):
         return
     
     rates = await get_all_bank_rates()
-    text, base_p = format_tickets_post(origin, dest, day, None, tickets[0], rates, cls, lang)
+    text, base_p = format_tickets_post(origin, dest, day, None, tickets[0], None, rates, cls, lang)
     kb = kb_direct_agency_offers(origin, dest, cls, airline, day, None, page_idx, base_p, lang)
     
     await call.message.edit_text(text, reply_markup=kb, parse_mode="HTML", link_preview_options=LinkPreviewOptions(is_disabled=True))
@@ -965,17 +932,19 @@ async def cb_return_day_selected(call: CallbackQuery):
     page_idx = int(page_str)
 
     await call.message.edit_text(t(lang, "searching"))
-    tickets = await fetch_tickets(origin, dest, dep_date, trip_class=cls, airline=airline, limit=1)
+    dep_tickets = await fetch_tickets(origin, dest, dep_date, trip_class=cls, airline=airline, limit=1)
+    ret_tickets = await fetch_tickets(dest, origin, ret_day, trip_class=cls, airline=airline, limit=1)
     
-    if not tickets:
+    if not dep_tickets:
         air_name = AIRLINES_LIST.get(airline, airline if airline != "ALL" else "Barcha aviakompaniyalar")
         not_found_txt = t(lang, "not_found_airline", air=air_name, date=dep_date, o=city(origin, lang), d=city(dest, lang))
         kb_back_options = kb_not_found_redirect(origin, dest, cls, airline, dep_date, page_idx, lang)
         await call.message.edit_text(not_found_txt, reply_markup=kb_back_options, parse_mode="HTML")
         return
 
+    ret_ticket = ret_tickets[0] if ret_tickets else None
     rates = await get_all_bank_rates()
-    text, base_p = format_tickets_post(origin, dest, dep_date, ret_day, tickets[0], rates, cls, lang)
+    text, base_p = format_tickets_post(origin, dest, dep_date, ret_day, dep_tickets[0], ret_ticket, rates, cls, lang)
     kb = kb_direct_agency_offers(origin, dest, cls, airline, dep_date, ret_day, page_idx, base_p, lang)
     
     await call.message.edit_text(text, reply_markup=kb, parse_mode="HTML", link_preview_options=LinkPreviewOptions(is_disabled=True))
@@ -1082,7 +1051,7 @@ async def check_alerts(bot):
             if old_price is not None and new_price < old_price:
                 lang = lang_of(r["user_id"])
                 text = t(lang, "dropped", old=f"{old_price:.0f}", new=f"{new_price:.0f}")
-                body, base_p = format_tickets_post(origin, dest, period, None, tickets[0], rates, cls, lang)
+                body, base_p = format_tickets_post(origin, dest, period, None, tickets[0], None, rates, cls, lang)
                 text += body
                 kb = kb_direct_agency_offers(origin, dest, cls, "ALL", period, None, 0, base_p, lang)
                 try:
