@@ -1,0 +1,1 @@
+- [Bot source replacements](bot-source-replacements.md) — replace only from the user's attachment, byte-for-byte, then restart the bot.

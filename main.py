@@ -43,25 +43,35 @@ dp = Dispatcher()
 
 USER_FLOW = {}
 
+# O'zbekiston aeroportlari
 ORIGIN_CODES = ["TAS", "SKD", "BHK", "FEG", "NMA", "AZN", "UGC", "NCU", "TMJ", "KSQ"]
-DEST_CODES = ["MOW", "LED", "IST", "DXB", "ALA", "DEL", "JED", "KUL", "BKK", "SEL", "BAK", "TBS", "AYT", "MED"]
+
+# AQSh, Yevropa va asosiy mashhur yo'nalishlar
+DEST_CODES = [
+    "NYC", "LON", "PAR", "BER", "FRA", "ROM", "PRG", "WAW", "VIE", "MAD",
+    "IST", "AYT", "DXB", "JED", "MOW", "LED", "ALA", "TBS", "BAK"
+]
 
 CITY = {
     "ru": {
         "TAS": "Ташкент", "SKD": "Самарканд", "BHK": "Бухара", "FEG": "Фергана",
         "NMA": "Наманган", "AZN": "Андижан", "UGC": "Ургенч", "NCU": "Нукус",
-        "TMJ": "Термез", "KSQ": "Карши", "MOW": "Москва", "LED": "Санкт-Петербург",
-        "IST": "Стамбул", "DXB": "Дубай", "ALA": "Алматы", "DEL": "Дели",
-        "JED": "Джидда", "KUL": "Куала-Лумпур", "BKK": "Бангкок", "SEL": "Сеул",
-        "BAK": "Баку", "TBS": "Тбилиси", "AYT": "Анталья", "MED": "Медина",
+        "TMJ": "Термез", "KSQ": "Карши",
+        "NYC": "Нью-Йорк", "LON": "Лондон", "PAR": "Париж", "BER": "Берлин",
+        "FRA": "Франкфурт", "ROM": "Рим", "PRG": "Прага", "WAW": "Варшава",
+        "VIE": "Вена", "MAD": "Мадрид", "IST": "Стамбул", "AYT": "Анталья",
+        "DXB": "Дубай", "JED": "Джидда", "MOW": "Москва", "LED": "Санкт-Петербург",
+        "ALA": "Алматы", "TBS": "Тбилиси", "BAK": "Баку"
     },
     "uz": {
         "TAS": "Toshkent", "SKD": "Samarqand", "BHK": "Buxoro", "FEG": "Farg'ona",
         "NMA": "Namangan", "AZN": "Andijon", "UGC": "Urganch", "NCU": "Nukus",
-        "TMJ": "Termiz", "KSQ": "Qarshi", "MOW": "Moskva", "LED": "Sankt-Peterburg",
-        "IST": "Istanbul", "DXB": "Dubay", "ALA": "Almati", "DEL": "Dehli",
-        "JED": "Jidda", "KUL": "Kuala-Lumpur", "BKK": "Bangkok", "SEL": "Seul",
-        "BAK": "Boku", "TBS": "Tbilisi", "AYT": "Antaliya", "MED": "Madina",
+        "TMJ": "Termiz", "KSQ": "Qarshi",
+        "NYC": "Nyu-York", "LON": "London", "PAR": "Parij", "BER": "Berlin",
+        "FRA": "Frankfurt", "ROM": "Rim", "PRG": "Praga", "WAW": "Varshava",
+        "VIE": "Vena", "MAD": "Madrid", "IST": "Istanbul", "AYT": "Antaliya",
+        "DXB": "Dubay", "JED": "Jidda", "MOW": "Moskva", "LED": "Sankt-Peterburg",
+        "ALA": "Almati", "TBS": "Tbilisi", "BAK": "Boku"
     },
 }
 
@@ -71,7 +81,10 @@ AIRLINES_LIST = {
     "FZ": "Flydubai",
     "SU": "Aeroflot",
     "PC": "Pegasus",
-    "KC": "Air Astana",
+    "LH": "Lufthansa",
+    "LO": "LOT Polish Airlines",
+    "QR": "Qatar Airways",
+    "EK": "Emirates",
     "J9": "Jazeera Airways",
     "G9": "Air Arabia"
 }
@@ -84,9 +97,9 @@ MONTHS = {
 TEXTS = {
     "ru": {
         "help": (
-            "✈️ <b>Профессиональный поиск авиабилетов</b>\n\n"
+            "✈️ <b>Международный поиск авиабилетов</b>\n\n"
+            "• Рейсы в <b>США, Европу, Турцию и ОАЭ</b>.\n"
             "• Сравнение цен по агентствам: <b>GoToGate, OneTwoTrip, City.Travel</b> и авиакомпаниям.\n"
-            "• Выбор класса (Эконом / Бизнес) и фильтрация по авиакомпаниям.\n"
             "• Актуальные курсы валют банков Узбекистана.\n\n"
             "Нажмите «✈️ Найти авиабилет» для начала."
         ),
@@ -97,22 +110,22 @@ TEXTS = {
         "btn_back": "⬅️ Назад",
         "btn_new": "🔁 Новый поиск",
         "btn_watch": "🔔 Следить за ценой",
-        "btn_other": "🔍 Другой город",
+        "btn_more_cities": "🌍 Больше городов (Поиск)",
         "btn_to_calendar": "⬅️ К датам",
         "btn_change_airline": "✈️ Выбрать другую авиакомпанию",
         "btn_change_date": "📅 Выбрать другую дату",
         "btn_buy_ticket": "🔗 Купить #{i}: {site} ({price})",
         "btn_compare_sky": "🔍 Проверить на Skyscanner",
         "ask_origin": "Откуда летите? Выберите город вылета:",
-        "ask_dest": "Вылет: {o}\nКуда летите?",
+        "ask_dest": "Вылет: {o}\nКуда летите? (США, Европа, Азия):",
         "ask_class": "Выберите класс обслуживания:",
         "ask_airline": "Выберите авиакомпанию (или Все):",
         "ask_month": "{o} → {d} ({cls})\nВыберите месяц вылета:",
-        "ask_origin_text": "Введите название города вылета:",
-        "ask_dest_text": "Введите название города прилёта:",
-        "pick_city": "Выберите город из списка:",
-        "city_not_found": "Не удалось найти город. Попробуйте написать иначе.",
-        "searching": "🔎 Ищу лучшие предложения и сверяю курсы...",
+        "ask_origin_text": "Введите название любого города вылета (например: Самара, Душанбе):",
+        "ask_dest_text": "Введите название любого города назначения (например: Майами, Милан, Варшава):",
+        "pick_city": "Выберите подходящий город/аэропорт из списка:",
+        "city_not_found": "Не удалось найти город. Попробуйте написать на русском или английском.",
+        "searching": "🔎 Ищу рейсы и лучшие предложения...",
         "route_title": "✈️ <b>{o} → {d}</b>\nКласс: <b>{cls}</b> | Найдено: {count} вариантов\n",
         "direct": "Прямой рейс",
         "stops": "Пересадок: {n}",
@@ -126,11 +139,11 @@ TEXTS = {
         ),
         "flight_time": "🛫 Вылет: {dt}",
         "cal_title": "📅 <b>{o} → {d}</b> ({month} {year})\nПоказаны дни: <b>{range}</b>\nНажмите на день для просмотра билетов:",
-        "cal_empty": "На этот месяц данных нет. Попробуйте другой месяц или направление.",
+        "cal_empty": "На этот месяц данных нет. Попробуйте другой месяц.",
         "not_found_airline": (
             "⚠️ <b>Билетов не найдено!</b>\n\n"
-            "У авиакомпании <b>{air}</b> на дату {date} нет доступных рейсов по направлению {o} → {d}.\n\n"
-            "Вы можете выбрать другую авиакомпанию (или «Все авиакомпании») либо посмотреть другую дату:"
+            "У авиакомпании <b>{air}</b> на дату {date} нет доступных рейсов {o} → {d}.\n\n"
+            "Выберите другую авиакомпанию (или «Все») либо выберите другую дату:"
         ),
         "not_found": "Билетов не найдено по выбранным параметрам.",
         "watch_exists": "🔔 Направление уже в отслеживании: {route}",
@@ -148,10 +161,10 @@ TEXTS = {
     },
     "uz": {
         "help": (
-            "✈️ <b>Professional aviachiptalar qidiruv tizimi</b>\n\n"
-            "• Yirik agentliklar narxlari taqqoslovi: <b>GoToGate, OneTwoTrip, City.Travel</b> va aviakompaniyalar.\n"
-            "• Klass (Ekonom / Biznes) hamda aviakompaniyalarni saralash imkoniyati.\n"
-            "• O'zbekiston banklarining (NBU, Ipak Yo'li, Xalq Banki) jonli dollar kurslari.\n\n"
+            "✈️ <b>Xalqaro aviachiptalar qidiruv tizimi</b>\n\n"
+            "• <b>AQSh, Yevropa, Turkiya va BAA</b> yo'nalishlari.\n"
+            "• Yirik agentliklar: <b>GoToGate, OneTwoTrip, City.Travel</b> va aviakompaniyalar narxlari taqqoslovi.\n"
+            "• O'zbekiston banklarining jonli dollar kurslari.\n\n"
             "Boshlash uchun «✈️ Aviachipta qidirish» tugmasini bosing."
         ),
         "menu_avia": "✈️ Aviachipta qidirish",
@@ -161,22 +174,22 @@ TEXTS = {
         "btn_back": "⬅️ Orqaga",
         "btn_new": "🔁 Yangi qidiruv",
         "btn_watch": "🔔 Narxni kuzatish",
-        "btn_other": "🔍 Boshqa shahar",
+        "btn_more_cities": "🌍 Ko'proq shaharlar (Qidirish)",
         "btn_to_calendar": "⬅️ Sanalarga qaytish",
         "btn_change_airline": "✈️ Boshqa aviakompaniyani tanlash",
         "btn_change_date": "📅 Boshqa sanani ko'rish",
         "btn_buy_ticket": "🔗 #{i}: {site} ({price})",
         "btn_compare_sky": "🔍 Skyscanner orqali taqqoslash",
         "ask_origin": "Qayerdan uchasiz? Shaharni tanlang:",
-        "ask_dest": "Uchish: {o}\nQayerga uchasiz?",
+        "ask_dest": "Uchish: {o}\nQayerga uchasiz? (AQSh, Yevropa, Osiyo):",
         "ask_class": "Xizmat ko'rsatish klassini tanlang:",
         "ask_airline": "Aviakompaniyani tanlang (yoki Barchasi):",
         "ask_month": "{o} → {d} ({cls})\nUchish oyini tanlang:",
-        "ask_origin_text": "Uchish shahrini yozing:",
-        "ask_dest_text": "Qo'nish shahrini yozing:",
-        "pick_city": "Ro'yxatdan tanlang:",
-        "city_not_found": "Bunday shahar topilmadi. Qayta yozib ko'ring.",
-        "searching": "🔎 Eng arzon takliflar va bank kurslari tekshirilmoqda...",
+        "ask_origin_text": "Istalgan uchish shahrini yozing (masalan: Olmaota, Chimkent, Moskva):",
+        "ask_dest_text": "Istalgan borish shahrini yozing (masalan: Mayami, Rim, Varshava, Toronto):",
+        "pick_city": "Ro'yxatdan kerakli shahar/aeroportni tanlang:",
+        "city_not_found": "Bunday shahar topilmadi. Shahar nomini lotincha yoki ruscha yozib ko'ring.",
+        "searching": "🔎 Aviakompaniyalar va agentliklardan narxlar qidirilmoqda...",
         "route_title": "✈️ <b>{o} → {d}</b>\nKlass: <b>{cls}</b> | Topildi: {count} ta reys\n",
         "direct": "To'g'ridan-to'g'ri reys",
         "stops": "Almashinuvlar: {n} ta",
@@ -190,11 +203,11 @@ TEXTS = {
         ),
         "flight_time": "🛫 Uchish vaqti: {dt}",
         "cal_title": "📅 <b>{o} → {d}</b> ({month} {year})\nKo'rsatilmoqda: <b>{range}-kunlar</b>\nChiptalarni ko'rish uchun kunni bosing:",
-        "cal_empty": "Bu oy uchun keshda narxlar mavjud emas.",
+        "cal_empty": "Bu oy uchun narxlar mavjud emas.",
         "not_found_airline": (
             "⚠️ <b>Chiptalar topilmadi!</b>\n\n"
-            "<b>{air}</b> aviakompaniyasida {date} sanasida {o} → {d} yo'nalishida bo'sh reyslar topilmadi.\n\n"
-            "Siz boshqa aviakompaniyani («Barcha aviakompaniyalar») tanlashingiz yoki boshqa sanani ko'rishingiz mumkin:"
+            "<b>{air}</b> aviakompaniyasida {date} sanasida {o} → {d} yo'nalishida chipta topilmadi.\n\n"
+            "Boshqa aviakompaniyani («Barcha aviakompaniyalar») yoki boshqa sanani tanlashingiz mumkin:"
         ),
         "not_found": "Ushbu parametrlar bo'yicha chiptalar topilmadi.",
         "watch_exists": "🔔 Bu yo'nalish allaqachon kuzatilmoqda: {route}",
@@ -330,7 +343,7 @@ def build_ticket_url(link):
         url += ("&" if "?" in url else "?") + f"marker={MARKER}"
     return url
 
-# ---------- Menyular va Tugmalar ----------
+# ---------- Menyular ----------
 def kb_main_menu(lang):
     b = ReplyKeyboardBuilder()
     b.row(
@@ -355,7 +368,7 @@ def kb_origins(lang):
     for code in ORIGIN_CODES:
         b.button(text=city(code, lang), callback_data=f"o:{code}")
     b.adjust(2)
-    b.row(InlineKeyboardButton(text=t(lang, "btn_other"), callback_data="oo"))
+    b.row(InlineKeyboardButton(text=t(lang, "btn_more_cities"), callback_data="oo"))
     return b.as_markup()
 
 def kb_dests(origin, lang):
@@ -364,7 +377,7 @@ def kb_dests(origin, lang):
         if code != origin:
             b.button(text=city(code, lang), callback_data=f"d:{origin}:{code}")
     b.adjust(2)
-    b.row(InlineKeyboardButton(text=t(lang, "btn_other"), callback_data=f"od:{origin}"))
+    b.row(InlineKeyboardButton(text=t(lang, "btn_more_cities"), callback_data=f"od:{origin}"))
     b.row(InlineKeyboardButton(text=t(lang, "btn_back"), callback_data="go_avia"))
     return b.as_markup()
 
@@ -392,7 +405,7 @@ def kb_months(origin, dest, cls, airline, lang):
     for _ in range(6):
         b.button(
             text=f"{MONTHS[lang][m].capitalize()} {y}",
-            callback_data=f"m:{origin}:{dest}:{cls}:{airline}:{y}-{m:02d}:1"  # 1-dekada boshlanadi
+            callback_data=f"m:{origin}:{dest}:{cls}:{airline}:{y}-{m:02d}:1"
         )
         m += 1
         if m > 12:
@@ -402,13 +415,12 @@ def kb_months(origin, dest, cls, airline, lang):
     b.row(InlineKeyboardButton(text=t(lang, "btn_back"), callback_data=f"cls:{origin}:{dest}:{cls}"))
     return b.as_markup()
 
-# Katta tugmali va 10 kunlikka bo'lingan qulay kalendar
+# 10 kunlikka bo'lingan va chipta yo'q bo'lsa ❌ chiqadigan kalendar
 def kb_paged_calendar(origin, dest, cls, airline, year, month, prices, cheapest, page, lang):
     b = InlineKeyboardBuilder()
     today = date.today()
     total_days = calendar.monthrange(year, month)[1]
 
-    # 10 kunlik oraliqlarni aniqlash
     if page == 1:
         start_day, end_day = 1, min(10, total_days)
     elif page == 2:
@@ -416,23 +428,22 @@ def kb_paged_calendar(origin, dest, cls, airline, year, month, prices, cheapest,
     else:
         start_day, end_day = 21, total_days
 
-    # Har bir kun uchun keng, 2 ustunli tugmalar
     for day in range(start_day, end_day + 1):
         day_date = date(year, month, day)
         key = day_date.isoformat()
         
         if day_date < today:
-            b.button(text=f"🗓 {day}-kun: —", callback_data="n")
+            b.button(text=f"🗓❌ {day}-kun", callback_data="n")
         elif key in prices:
             price = int(prices[key]["price"])
             icon = "🟢" if key in cheapest else "💵"
             b.button(text=f"{icon} {day}-{MONTHS[lang][month][:3]} | ${price}", callback_data=f"c:{origin}:{dest}:{cls}:{airline}:{key}:{page}")
         else:
-            b.button(text=f"🗓 {day}-{MONTHS[lang][month][:3]} | —", callback_data=f"c:{origin}:{dest}:{cls}:{airline}:{key}:{page}")
+            # Chipta bo'lmagan sanalarda [🗓❌] belgisi
+            b.button(text=f"🗓❌ {day}-{MONTHS[lang][month][:3]}", callback_data=f"c:{origin}:{dest}:{cls}:{airline}:{key}:{page}")
 
-    b.adjust(2)  # Qatorga 2 tadan katta va chiroyli tugma
+    b.adjust(2)
 
-    # Paginatsiya paneli: 1-10, 11-20, 21-30
     nav_btns = []
     if page != 1:
         nav_btns.append(InlineKeyboardButton(text="⬅️ 1–10", callback_data=f"m:{origin}:{dest}:{cls}:{airline}:{year}-{month:02d}:1"))
@@ -452,12 +463,9 @@ def kb_paged_calendar(origin, dest, cls, airline, year, month, prices, cheapest,
     return b.as_markup()
 
 def kb_not_found_redirect(origin, dest, cls, airline, day, page, lang):
-    """Chipta topilmaganda orqaga yo'naltiruvchi maxsus klaviatura"""
     b = InlineKeyboardBuilder()
     period = day[:7]
-    # Boshqa aviakompaniyani tanlash
     b.button(text=t(lang, "btn_change_airline"), callback_data=f"cls:{origin}:{dest}:{cls}")
-    # Boshqa sanani ko'rish (o'sha kalendarga qaytish)
     b.button(text=t(lang, "btn_change_date"), callback_data=f"m:{origin}:{dest}:{cls}:{airline}:{period}:{page}")
     b.button(text=t(lang, "btn_new"), callback_data="go_avia")
     b.adjust(1)
@@ -525,6 +533,7 @@ async def fetch_calendar(origin, destination, month, trip_class="Y"):
     return {k: v for k, v in raw.items() if isinstance(v, dict) and v.get("price") is not None}
 
 async def search_places(term, lang):
+    """Dunyo bo'ylab istalgan shahar va aeroportni qidirish"""
     params = {"term": term, "locale": "ru" if lang == "ru" else "en", "types[]": "city"}
     data = await http_json(PLACES_URL, params=params)
     if not isinstance(data, list):
@@ -533,11 +542,11 @@ async def search_places(term, lang):
     for item in data:
         code = str(item.get("code") or "").upper()
         name = item.get("name") or item.get("city_name") or ""
-        if item.get("type") == "city" and len(code) == 3 and code not in seen:
+        if len(code) == 3 and code not in seen:
             seen.add(code)
             result.append({"code": code, "name": name, "country": item.get("country_name", "")})
             save_place(code, lang, name)
-            if len(result) >= 6:
+            if len(result) >= 8:
                 break
     return result
 
@@ -557,7 +566,7 @@ def format_detailed_tickets(origin, destination, tickets, lang, rates, cls):
         price_val = float(tk.get("price", 0))
         lines.append(
             f"<b>{idx}. Reys ({airline_name}):</b>\n"
-            f"💵 Eng arzon narx: <b>{money(price_val, rates['cbu'], lang)}</b>\n"
+            f"💵 Narx: <b>{money(price_val, rates['cbu'], lang)}</b>\n"
             f"🏢 Sotuvchi: <b>{vendor_name}</b>\n"
             f"{t(lang, 'flight_time', dt=dep_time)}\n"
             f"🔄 {flight_type}\n"
@@ -664,7 +673,6 @@ async def cb_airline(call: CallbackQuery):
         reply_markup=kb_months(origin, dest, cls, airline, lang)
     )
 
-# Sanalar paginatsiyasi (1-10, 11-20, 21-31)
 @dp.callback_query(F.data.startswith("m:"))
 async def cb_month(call: CallbackQuery):
     await call.answer()
@@ -694,7 +702,6 @@ async def cb_month(call: CallbackQuery):
     kb = kb_paged_calendar(origin, dest, cls, airline, year, month, prices, cheapest, page, lang)
     await call.message.edit_text(txt, reply_markup=kb, parse_mode="HTML")
 
-# Kun tanlanganda chiptalarni ko'rsatish yoki topilmasa orqaga qaytarish
 @dp.callback_query(F.data.startswith("c:"))
 async def cb_day(call: CallbackQuery):
     await call.answer()
@@ -705,9 +712,8 @@ async def cb_day(call: CallbackQuery):
     await call.message.edit_text(t(lang, "searching"))
     tickets = await fetch_tickets(origin, dest, day, trip_class=cls, airline=airline, limit=4)
     
-    # Agar tanlangan aviakompaniya bo'yicha chipta topilmasa
     if not tickets:
-        air_name = AIRLINES_LIST.get(airline, airline if airline != "ALL" else "Tanlangan")
+        air_name = AIRLINES_LIST.get(airline, airline if airline != "ALL" else "Barcha aviakompaniyalar")
         not_found_txt = t(
             lang, "not_found_airline",
             air=air_name, date=day, o=city(origin, lang), d=city(dest, lang)
@@ -731,7 +737,7 @@ async def cb_day(call: CallbackQuery):
 async def cb_noop(call: CallbackQuery):
     await call.answer()
 
-# Shaharlarni qidirish
+# Istalgan boshqa shaharni qidirish (Ko'proq shaharlar)
 @dp.callback_query(F.data == "oo")
 async def cb_other_origin(call: CallbackQuery):
     await call.answer()
