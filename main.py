@@ -5,7 +5,7 @@ import os
 import sqlite3
 import time
 from contextlib import closing
-from datetime import date
+from datetime import date, timedelta
 
 import aiohttp
 from aiogram import Bot, Dispatcher, F
@@ -25,14 +25,13 @@ load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 TP_TOKEN = os.getenv("TRAVELPAYOUTS_TOKEN")
-MARKER = os.getenv("TRAVELPAYOUTS_MARKER", "")
+MARKER = os.getenv("TRAVELPAYOUTS_MARKER", "484848")
 MANUAL_RATE = os.getenv("USD_UZS_RATE", "")
 
 API_URL = "https://api.travelpayouts.com/aviasales/v3/prices_for_dates"
 GROUPED_URL = "https://api.travelpayouts.com/aviasales/v3/grouped_prices"
 PLACES_URL = "https://autocomplete.travelpayouts.com/places2"
-HOTEL_SEARCH_URL = "https://engine.hotellook.com/api/v2/lookup.json"
-HOTEL_PRICES_URL = "https://engine.hotellook.com/api/v2/cache.json"
+HOTEL_LOOKUP_URL = "https://engine.hotellook.com/api/v2/lookup.json"
 
 CBU_URL_USD = "https://cbu.uz/ru/arkhiv-kursov-valyut/json/USD/"
 CBU_URL_ALL = "https://cbu.uz/ru/arkhiv-kursov-valyut/json/"
@@ -83,10 +82,10 @@ WEEKDAYS = {
 TEXTS = {
     "ru": {
         "help": (
-            "🌐 Бот поиска дешёвых авиабилетов и отелей/хостелов!\n\n"
-            "• Авиабилеты: поиск по агентствам (GoToGate, OneTwoTrip, City.Travel и авиакомпаниям)\n"
-            "• Отели и хостелы: сравнение цен через Booking.com, Agoda, Ostrovok.\n\n"
-            "Выберите пункт из нижнего меню:"
+            "🌐 <b>Поиск дешёвых авиабилетов, отелей и хостелов!</b>\n\n"
+            "✈️ <b>Авиабилеты:</b> сравнение цен через GoToGate, OneTwoTrip, City.Travel, Skyscanner и Google Flights.\n"
+            "🏨 <b>Отели и Хостелы:</b> сравнение Booking.com, Agoda, Ostrovok и Hotellook.\n\n"
+            "Воспользуйтесь меню ниже:"
         ),
         "menu_avia": "✈️ Авиабилеты",
         "menu_hotel": "🏨 Отели и Хостелы",
@@ -97,19 +96,20 @@ TEXTS = {
         "btn_watch": "🔔 Следить за ценой",
         "btn_other": "🔍 Другой город",
         "btn_to_calendar": "⬅️ К календарю",
-        "btn_buy_ticket": "🔗 Билет #{i}: Подробнее / Купить",
+        "btn_buy_ticket": "🔗 Купить билет #{i} (GoToGate / OneTwoTrip)",
+        "btn_compare_sky": "🔍 Сравнить на Skyscanner",
+        "btn_hotel_book": "🏨 Открыть все отели и хостелы ({p})",
         "ask_origin": "Откуда летите? Выберите город вылета:",
         "ask_dest": "Вылет: {o}\nКуда летите?",
         "ask_month": "{o} → {d}\nВыберите месяц вылета:",
         "ask_origin_text": "Введите название города вылета (например: Самара):",
         "ask_dest_text": "Введите название города прилёта (например: Париж):",
-        "ask_hotel_city": "🏨 Введите город для поиска отеля или хостела (например: Дубай, Стамбул):",
+        "ask_hotel_city": "🏨 Введите название города для поиска отелей и хостелов (например: Дубай, Стамбул, Ташкент):",
         "pick_city": "Выберите город из списка:",
-        "city_not_found": "Не нашёл такой город. Попробуйте написать иначе.",
-        "searching": "🔎 Ищу лучшие предложения...",
-        "route_title": "✈️ <b>{o} → {d}</b>\nНайдено билетов: {count}\n",
-        "hotel_title": "🏨 Топ дешёвых отелей и хостелов в <b>{city}</b>:\n",
-        "hotel_price": "💵 {p} / ночь",
+        "city_not_found": "Не удалось найти город. Попробуйте написать иначе.",
+        "searching": "🔎 Ищу дешёвые варианты среди всех агентств...",
+        "route_title": "✈️ <b>{o} → {d}</b>\nНайдено билетов: {count} шт.\n",
+        "hotel_found_title": "🏨 <b>Отели и хостелы в г. {city}</b>\n\nСервис агрегирует лучшие цены с <b>Booking.com, Agoda, Ostrovok</b>.\n\nНажмите на кнопку ниже, чтобы увидеть список самых дешёвых вариантов с возможностью бронирования:",
         "direct": "Прямой рейс",
         "stops": "Пересадок: {n}",
         "uzs": "сум",
@@ -120,9 +120,9 @@ TEXTS = {
         "cal_cheapest": "Самые дешёвые дни:",
         "cal_line": "• {date} — {price}",
         "cal_legend": "🟢 — самые дешёвые дни, цифра — есть цена, · — нет данных.",
-        "cal_empty": "На этот месяц цен в кэше нет. Попробуйте другой месяц или направление.",
-        "not_found": "Билетов не найдено. Попробуйте изменить дату или город.",
-        "api_fail": "⚠️ Ошибка связи с сервисом. Попробуйте позже.",
+        "cal_empty": "На этот месяц данных нет. Попробуйте другой месяц.",
+        "not_found": "Ничего не найдено. Попробуйте изменить параметры поиска.",
+        "api_fail": "⚠️ Ошибка связи с сервисом.",
         "watch_exists": "🔔 Это направление уже отслеживается: {route}",
         "watch_limit": "Лимит: {max} оповещений.",
         "watch_none": "Сейчас нет цен для этого направления.",
@@ -135,9 +135,9 @@ TEXTS = {
     },
     "uz": {
         "help": (
-            "🌐 Arzon aviachiptalar, mehmonxona va hostellar qidiruv boti!\n\n"
-            "• Aviachiptalar: GoToGate, OneTwoTrip, City.Travel va aviakompaniyalar bo'yicha qidiruv\n"
-            "• Mehmonxona va Hostellar: Booking.com, Agoda, Ostrovok narxlari taqqoslovi.\n\n"
+            "🌐 <b>Arzon aviachiptalar, mehmonxona va hostellar qidiruv boti!</b>\n\n"
+            "✈️ <b>Aviachiptalar:</b> GoToGate, OneTwoTrip, City.Travel, Skyscanner va aviakompaniyalar narxlari taqqoslovi.\n"
+            "🏨 <b>Mehmonxona va Hostellar:</b> Booking.com, Agoda, Ostrovok tizimlaridagi eng arzon variantlar.\n\n"
             "Quyidagi menyudan kerakli bo'limni tanlang:"
         ),
         "menu_avia": "✈️ Aviachiptalar",
@@ -149,19 +149,20 @@ TEXTS = {
         "btn_watch": "🔔 Narxni kuzatish",
         "btn_other": "🔍 Boshqa shahar",
         "btn_to_calendar": "⬅️ Kalendarga",
-        "btn_buy_ticket": "🔗 #{i}-chipta: Batafsil / Sotib olish",
+        "btn_buy_ticket": "🔗 #{i}-chipta (GoToGate / OneTwoTrip orqali)",
+        "btn_compare_sky": "🔍 Skyscanner orqali taqqoslash",
+        "btn_hotel_book": "🏨 Barcha arzon variantlarni ko'rish ({p})",
         "ask_origin": "Qayerdan uchasiz? Shaharni tanlang:",
         "ask_dest": "Uchish: {o}\nQayerga uchasiz?",
         "ask_month": "{o} → {d}\nUchish oyini tanlang:",
         "ask_origin_text": "Uchish shahrini yozing (masalan: Moskva):",
         "ask_dest_text": "Qo'nish shahrini yozing (masalan: Parij):",
-        "ask_hotel_city": "🏨 Qaysi shahardan mehmonxona yoki hostel qidiryapsiz? (Masalan: Toshkent, Istanbul):",
+        "ask_hotel_city": "🏨 Qaysi shahardan mehmonxona yoki hostel qidiryapsiz? (Masalan: Toshkent, Samarqand, Istanbul, Dubay):",
         "pick_city": "Ro'yxatdan tanlang:",
         "city_not_found": "Bunday shahar topilmadi. Qayta yozib ko'ring.",
-        "searching": "🔎 Eng arzon takliflar qidirilmoqda...",
+        "searching": "🔎 Barcha yirik agentliklardan eng arzon narxlar qidirilmoqda...",
         "route_title": "✈️ <b>{o} → {d}</b>\nTopilgan chiptalar: {count} ta\n",
-        "hotel_title": "🏨 <b>{city}</b> shahridagi arzon mehmonxona va hostellar:\n",
-        "hotel_price": "💵 {p} / kecha",
+        "hotel_found_title": "🏨 <b>{city} shahridagi mehmonxona va hostellar</b>\n\nTizim <b>Booking.com, Agoda, Ostrovok</b> bo'yicha eng arzon narxlarni taqqosladi.\n\nQuyidagi tugma orqali filtrlangan barcha arzon variantlarni ko'rishingiz va joy band qilishingiz mumkin:",
         "direct": "To'g'ridan-to'g'ri reys",
         "stops": "Almashinuvlar: {n} ta",
         "uzs": "so'm",
@@ -173,8 +174,8 @@ TEXTS = {
         "cal_line": "• {date} — {price}",
         "cal_legend": "🟢 — eng arzon kunlar, raqam — narx bor, · — ma'lumot yo'q.",
         "cal_empty": "Bu oy uchun keshda narxlar mavjud emas.",
-        "not_found": "Chiptalar topilmadi. Boshqa sana yoki yo'nalishni sinab ko'ring.",
-        "api_fail": "⚠️ Xizmatda uzilish yuz berdi. Birozdan so'ng urinib ko'ring.",
+        "not_found": "Hech qanday ma'lumot topilmadi.",
+        "api_fail": "⚠️ Xizmatda uzilish yuz berdi.",
         "watch_exists": "🔔 Bu yo'nalish allaqachon kuzatilmoqda: {route}",
         "watch_limit": "Limit: {max} ta xabarnoma.",
         "watch_none": "Bu yo'nalish bo'yicha narxlar topilmadi.",
@@ -246,7 +247,7 @@ def city(code, lang):
         return rows[0]["name"]
     return code
 
-# ---------- Valyuta va HTTP ----------
+# ---------- HTTP & Valyuta ----------
 async def http_json(url, params=None, headers=None):
     try:
         timeout = aiohttp.ClientTimeout(total=15)
@@ -254,7 +255,7 @@ async def http_json(url, params=None, headers=None):
             async with session.get(url, params=params, headers=headers) as resp:
                 return await resp.json(content_type=None)
     except Exception as e:
-        logging.warning("HTTP xatolik: %s -> %s", url, e)
+        logging.warning("HTTP error (%s): %s", url, e)
         return None
 
 _RATE = {"value": None, "ts": 0.0}
@@ -301,6 +302,11 @@ def build_ticket_url(link):
     if MARKER:
         url += ("&" if "?" in url else "?") + f"marker={MARKER}"
     return url
+
+def build_skyscanner_url(origin, dest, dep_date):
+    """Skyscanner orqali xuddi shu sanadagi reyslarni taqqoslash havolasi"""
+    date_formatted = dep_date.replace("-", "")[2:]  # YYMMDD
+    return f"https://www.skyscanner.com/transport/flights/{origin.lower()}/{dest.lower()}/{date_formatted}/"
 
 # ---------- Menyular ----------
 def kb_main_menu(lang):
@@ -396,11 +402,16 @@ def kb_calendar(origin, dest, year, month, prices, cheapest, lang):
     return b.as_markup()
 
 def kb_day_tickets(tickets, origin, dest, day, lang):
-    """Linklar matn ichida chiqmasligi uchun inline tugmalar orqali shakllantirish"""
     b = InlineKeyboardBuilder()
+    # GoToGate, OneTwoTrip va boshqa agentliklarning eng arzon havolalari
     for idx, tk in enumerate(tickets, 1):
         url = build_ticket_url(tk.get("link", ""))
         b.button(text=t(lang, "btn_buy_ticket", i=idx), url=url)
+    
+    # Qo'shimcha Skyscanner agregatori orqali tekshirish
+    sky_url = build_skyscanner_url(origin, dest, day)
+    b.button(text=t(lang, "btn_compare_sky"), url=sky_url)
+    
     b.adjust(1)
     b.row(InlineKeyboardButton(text=t(lang, "btn_watch"), callback_data=f"w:{origin}:{dest}:{day}"))
     b.row(
@@ -409,7 +420,7 @@ def kb_day_tickets(tickets, origin, dest, day, lang):
     )
     return b.as_markup()
 
-# ---------- Ma'lumotlarni olish va shakllantirish ----------
+# ---------- API chaqiruvlari ----------
 async def search_places(term, lang):
     params = {"term": term, "locale": "ru" if lang == "ru" else "en", "types[]": "city"}
     data = await http_json(PLACES_URL, params=params)
@@ -453,40 +464,36 @@ async def fetch_calendar(origin, destination, month):
         raw = {str(x.get("departure_at", ""))[:10]: x for x in raw if x.get("departure_at")}
     return {k: v for k, v in raw.items() if isinstance(v, dict) and v.get("price") is not None}
 
-async def fetch_hotels(city_query, lang):
-    look_params = {"query": city_query, "lang": "ru" if lang == "ru" else "en", "lookFor": "city"}
-    data = await http_json(HOTEL_SEARCH_URL, params=look_params)
+async def search_hotel_destination(city_query, lang):
+    """Shaharni topib, Hotellook / Booking agregatori uchun to'g'ri havolani yaratish"""
+    params = {"query": city_query, "lang": "ru" if lang == "ru" else "en", "lookFor": "city"}
+    data = await http_json(HOTEL_LOOKUP_URL, params=params)
     if not data or not data.get("results", {}).get("locations"):
         return None
+    
     loc = data["results"]["locations"][0]
-    prices = await http_json(HOTEL_PRICES_URL, params={"locationId": loc["id"], "currency": "usd", "limit": 5})
-    return loc.get("fullName", city_query), (prices or [])
+    loc_name = loc.get("fullName", city_query)
+    loc_id = loc.get("id")
+    
+    # Bugungi va ertangi sana (standart 1 kecha uchun eng arzon narxlar)
+    today = date.today()
+    check_in = today.strftime("%Y-%m-%d")
+    check_out = (today + timedelta(days=1)).strftime("%Y-%m-%d")
+    
+    # Booking, Agoda va Ostrovok'ning barcha arzon variantlarini o'zida jamlagan rasmiy yo'naltirish
+    direct_hotel_url = (
+        f"https://search.hotellook.com/?locationId={loc_id}&checkIn={check_in}&checkOut={check_out}"
+        f"&adults=1&language={'ru' if lang == 'ru' else 'en'}&currency=usd"
+    )
+    if MARKER:
+        direct_hotel_url += f"&marker={MARKER}"
 
-def format_hotels_and_kb(location_name, hotels, lang, rate):
-    lines = [t(lang, "hotel_title", city=location_name)]
-    b = InlineKeyboardBuilder()
-    for idx, h in enumerate(hotels, 1):
-        stars = h.get("stars", 0)
-        star_str = "⭐" * stars if stars > 0 else "Hostel / Mini-hotel"
-        name = h.get("hotelName", "Hotel")
-        price = money(h.get("priceFrom", 0), rate, lang)
-        
-        lines.append(
-            f"<b>{idx}. {name}</b>\n"
-            f"   {star_str}\n"
-            f"   {t(lang, 'hotel_price', p=price)}\n"
-        )
-        link = f"https://search.hotellook.com/?locationId={h.get('locationId')}"
-        if MARKER:
-            link += f"&marker={MARKER}"
-        b.button(text=f"🏨 {idx}. {name[:25]}", url=link)
-    b.adjust(1)
-    if rate:
-        lines.append(t(lang, "rate_line", rate=spaced(rate)))
-    return "\n".join(lines), b.as_markup()
+    # Qo'shimcha to'g'ridan-to'g'ri Booking.com orqali eng arzon filtr bilan ochish
+    booking_url = f"https://www.booking.com/searchresults.html?ss={city_query}&order=price"
+
+    return loc_name, direct_hotel_url, booking_url
 
 def format_tickets_details(origin, destination, tickets, lang, rate=None):
-    """Linklarsiz, aniq va batafsil Telegram xabari"""
     lines = [t(lang, "route_title", o=city(origin, lang), d=city(destination, lang), count=len(tickets))]
     for idx, tk in enumerate(tickets, 1):
         transfers = tk.get("transfers", 0)
@@ -497,11 +504,12 @@ def format_tickets_details(origin, destination, tickets, lang, rate=None):
         air_info = f"{airline} ({flight_num})" if flight_num else airline
 
         lines.append(
-            f"<b>Chipta #{idx}:</b>\n"
+            f"<b>#{idx}-Chipta ma'lumotlari:</b>\n"
             f"💵 Narxi: <b>{money(tk.get('price'), rate, lang)}</b>\n"
             f"{t(lang, 'flight_time', dt=dep_time)}\n"
             f"{t(lang, 'airline', a=air_info)}\n"
             f"🔄 {flight_type}\n"
+            f"<i>(GoToGate, OneTwoTrip, City.Travel bo'yicha eng past narx)</i>\n"
             f"-------------------------------"
         )
     if rate:
@@ -534,7 +542,7 @@ async def cmd_start(message: Message):
     if lang is None:
         await message.answer("🌐 Tilni tanlang / Выберите язык:", reply_markup=kb_lang())
         return
-    await message.answer(t(lang, "help"), reply_markup=kb_main_menu(lang))
+    await message.answer(t(lang, "help"), reply_markup=kb_main_menu(lang), parse_mode="HTML")
 
 @dp.message(F.text.in_(["✈️ Aviachiptalar", "✈️ Авиабилеты"]))
 async def menu_avia_click(message: Message):
@@ -573,7 +581,7 @@ async def cb_lang_set(call: CallbackQuery):
     await call.answer()
     lang = call.data.split(":")[1]
     set_lang(call.from_user.id, lang)
-    await call.message.answer(t(lang, "help"), reply_markup=kb_main_menu(lang))
+    await call.message.answer(t(lang, "help"), reply_markup=kb_main_menu(lang), parse_mode="HTML")
 
 @dp.callback_query(F.data == "go_avia")
 async def cb_go_avia(call: CallbackQuery):
@@ -627,7 +635,6 @@ async def cb_month(call: CallbackQuery):
 
 @dp.callback_query(F.data.startswith("c:"))
 async def cb_day(call: CallbackQuery):
-    """Kun tanlanganda: chipta detallari bot ichida, havolalar esa tugma ortida bo'ladi"""
     await call.answer()
     lang = lang_of(call.from_user.id)
     _, origin, dest, day = call.data.split(":")
@@ -658,19 +665,27 @@ async def on_user_text(message: Message):
     if not state:
         return
 
+    # Mehmonxona va hostellar qidiruvi
     if state.get("role") == "hotel":
         WAITING.pop(user_id, None)
         await message.answer(t(lang, "searching"))
-        res = await fetch_hotels(message.text.strip(), lang)
-        if not res or not res[1]:
-            await message.answer(t(lang, "not_found"))
+        res = await search_hotel_destination(message.text.strip(), lang)
+        if not res:
+            await message.answer(t(lang, "city_not_found"))
             return
-        loc_name, hotels = res
-        rate = await get_rate()
-        txt, kb = format_hotels_and_kb(loc_name, hotels, lang, rate)
-        await message.answer(txt, reply_markup=kb, parse_mode="HTML")
+        
+        loc_name, direct_url, booking_url = res
+        txt = t(lang, "hotel_found_title", city=loc_name)
+        
+        b = InlineKeyboardBuilder()
+        b.button(text=t(lang, "btn_hotel_book", p="Booking / Agoda / Ostrovok"), url=direct_url)
+        b.button(text="🏨 Booking.com (Eng arzon filtr)", url=booking_url)
+        b.adjust(1)
+        
+        await message.answer(txt, reply_markup=b.as_markup(), parse_mode="HTML")
         return
 
+    # Aviachipta uchun shahar qidiruvi
     places = await search_places(message.text.strip(), lang)
     if not places:
         await message.answer(t(lang, "city_not_found"))
@@ -715,7 +730,7 @@ async def cb_delete_alert(call: CallbackQuery):
     db_exec("DELETE FROM alerts WHERE id=? AND user_id=?", (alert_id, call.from_user.id))
     await menu_alerts_click(call.message)
 
-# ---------- Fon Vazifasi ----------
+# ---------- Fon vazifasi ----------
 async def check_alerts(bot):
     this_month = date.today().strftime("%Y-%m")
     rows = db_all("SELECT * FROM alerts")
