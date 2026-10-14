@@ -5,7 +5,7 @@ import os
 import sqlite3
 import time
 from contextlib import closing
-from datetime import date
+from datetime import date, datetime
 
 import aiohttp
 from aiogram import Bot, Dispatcher, F
@@ -37,13 +37,21 @@ DB_PATH = os.getenv("DB_PATH", "bot.db")
 CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL", "3600"))
 MAX_ALERTS = 5
 DEFAULT_LANG = "uz"
+DEFAULT_COUNTRY = "UZ"
 
 logging.basicConfig(level=logging.INFO)
 dp = Dispatcher()
 
 USER_FLOW = {}
 
-ORIGIN_CODES = ["TAS", "SKD", "BHK", "FEG", "NMA", "AZN", "UGC", "NCU", "TMJ", "KSQ"]
+# Mintaqalar bo'yicha aeroportlar
+COUNTRY_ORIGINS = {
+    "UZ": ["TAS", "SKD", "BHK", "FEG", "NMA", "AZN", "UGC", "NCU", "TMJ", "KSQ"],
+    "RU": ["MOW", "LED", "KZN", "OVB", "SVX", "AER", "ROV", "UFA", "KRR", "MRV"],
+    "KZ": ["ALA", "NQZ", "CIT", "GUW", "SCO", "AKX"],
+    "TR": ["IST", "SAW", "AYT", "ESB", "ADB", "DLM"],
+    "AE": ["DXB", "AUH", "SHJ"]
+}
 
 DEST_CODES = [
     "NYC", "LON", "PAR", "BER", "FRA", "ROM", "PRG", "WAW", "VIE", "MAD",
@@ -55,21 +63,29 @@ CITY = {
         "TAS": "Ташкент", "SKD": "Самарканд", "BHK": "Бухара", "FEG": "Фергана",
         "NMA": "Наманган", "AZN": "Андижан", "UGC": "Ургенч", "NCU": "Нукус",
         "TMJ": "Термез", "KSQ": "Карши",
+        "MOW": "Москва", "LED": "Санкт-Петербург", "KZN": "Казань", "OVB": "Новосибирск",
+        "SVX": "Екатеринбург", "AER": "Сочи", "ROV": "Ростов", "UFA": "Уфа", "KRR": "Краснодар", "MRV": "Минводы",
+        "ALA": "Алматы", "NQZ": "Астана", "CIT": "Шымкент", "GUW": "Атырау", "SCO": "Актау", "AKX": "Актобе",
+        "SAW": "Стамбул (Сабиха)", "ESB": "Анкара", "ADB": "Измир", "DLM": "Даламан",
+        "AUH": "Абу-Даби", "SHJ": "Шарджа",
         "NYC": "Нью-Йорк", "LON": "Лондон", "PAR": "Париж", "BER": "Берлин",
         "FRA": "Франкфурт", "ROM": "Рим", "PRG": "Прага", "WAW": "Варшава",
         "VIE": "Вена", "MAD": "Мадрид", "IST": "Стамбул", "AYT": "Анталья",
-        "DXB": "Дубай", "JED": "Джидда", "MOW": "Москва", "LED": "Санкт-Петербург",
-        "ALA": "Алматы", "TBS": "Тбилиси", "BAK": "Баку"
+        "DXB": "Дубай", "JED": "Джидда", "TBS": "Тбилиси", "BAK": "Баку"
     },
     "uz": {
         "TAS": "Toshkent", "SKD": "Samarqand", "BHK": "Buxoro", "FEG": "Farg'ona",
         "NMA": "Namangan", "AZN": "Andijon", "UGC": "Urganch", "NCU": "Nukus",
         "TMJ": "Termiz", "KSQ": "Qarshi",
+        "MOW": "Moskva", "LED": "Sankt-Peterburg", "KZN": "Qozon", "OVB": "Novosibirsk",
+        "SVX": "Yekaterinburg", "AER": "Sochi", "ROV": "Rostov", "UFA": "Ufa", "KRR": "Krasnodar", "MRV": "Minvod",
+        "ALA": "Almati", "NQZ": "Ostona", "CIT": "Chimkent", "GUW": "Atirau", "SCO": "Aqtau", "AKX": "Aqtobe",
+        "SAW": "Istanbul (Sabiha)", "ESB": "Anqara", "ADB": "Izmir", "DLM": "Dalaman",
+        "AUH": "Abu-Dabi", "SHJ": "Sharja",
         "NYC": "Nyu-York", "LON": "London", "PAR": "Parij", "BER": "Berlin",
         "FRA": "Frankfurt", "ROM": "Rim", "PRG": "Praga", "WAW": "Varshava",
         "VIE": "Vena", "MAD": "Madrid", "IST": "Istanbul", "AYT": "Antaliya",
-        "DXB": "Dubay", "JED": "Jidda", "MOW": "Moskva", "LED": "Sankt-Peterburg",
-        "ALA": "Almati", "TBS": "Tbilisi", "BAK": "Boku"
+        "DXB": "Dubay", "JED": "Jidda", "TBS": "Tbilisi", "BAK": "Boku"
     },
 }
 
@@ -96,33 +112,39 @@ TEXTS = {
     "ru": {
         "help": (
             "✈️ <b>Международный поиск авиабилетов</b>\n\n"
-            "• Сравнение цен между: <b>GoToGate, OneTwoTrip, Aviasales, Trip.com, Skyscanner</b>.\n"
-            "• Все агентства в одном посте с разными ценами.\n"
-            "• Актуальные курсы валют банков Узбекистана.\n\n"
-            "Нажмите «✈️ Найти авиабилет» для начала."
+            "• Рейсы в одну сторону и <b>Туда-обратно</b>.\n"
+            "• Прямые ссылки на агентства: <b>GoToGate, OneTwoTrip, Aviasales, Skyscanner</b>.\n"
+            "• Выбор домашнего региона: аэропорты подстроятся под вашу страну.\n\n"
+            "Выберите пункт меню ниже:"
         ),
         "menu_avia": "✈️ Найти авиабилет",
         "menu_alerts": "🔔 Мои оповещения",
         "menu_rates": "💱 Курсы банков",
+        "menu_country": "📍 Мой регион",
         "menu_lang": "🌐 Til / Язык",
         "btn_back": "⬅️ Назад",
         "btn_new": "🔁 Новый поиск",
         "btn_watch": "🔔 Следить за ценой",
-        "btn_more_cities": "🌍 Больше городов (Поиск)",
+        "btn_more_cities": "🌍 Другой город (Поиск)",
         "btn_to_calendar": "⬅️ К датам",
-        "btn_change_airline": "✈️ Выбрать другую авиакомпанию",
-        "btn_change_date": "📅 Выбрать другую дату",
-        "ask_origin": "Откуда летите? Выберите город вылета:",
-        "ask_dest": "Вылет: {o}\nКуда летите? (США, Европа, Азия):",
+        "btn_change_airline": "✈️ Другая авиакомпания",
+        "btn_change_date": "📅 Другая дата",
+        "btn_add_return": "🔄 Добавить обратный билет (Туда-обратно)",
+        "btn_oneway_only": "➡️ Только в одну сторону",
+        "ask_country": "📍 Выберите страну, где вы сейчас находитесь:",
+        "country_set": "✅ Ваш регион установлен: {c}. Теперь список вылетов будет адаптирован!",
+        "ask_origin": "Откуда вылетаете? (Города региона {c}):",
+        "ask_dest": "Вылет: {o}\nКуда летите?",
         "ask_class": "Выберите класс обслуживания:",
-        "ask_airline": "Выберите авиакомпанию (или Все):",
+        "ask_airline": "Выберите авиакомпанию:",
         "ask_month": "{o} → {d} ({cls})\nВыберите месяц вылета:",
+        "ask_return_decision": "📅 Вы выбрали дату вылета: <b>{date}</b>.\n\nЖелаете добавить дату возвращения (Туда-обратно)?",
+        "ask_return_month": "Выберите месяц возвращения:",
         "ask_origin_text": "Введите название любого города вылета:",
         "ask_dest_text": "Введите название любого города назначения:",
-        "pick_city": "Выберите подходящий город/аэропорт из списка:",
+        "pick_city": "Выберите подходящий город из списка:",
         "city_not_found": "Не удалось найти город. Попробуйте написать иначе.",
-        "searching": "🔎 Ищу рейсы и опрашиваю базы агентств...",
-        "route_title": "✈️ <b>{o} → {d}</b>\nКласс: <b>{cls}</b> | Сравнение агентств:\n",
+        "searching": "🔎 Ищу лучшие предложения и проверяю агентства...",
         "direct": "Прямой рейс",
         "stops": "Пересадок: {n}",
         "uzs": "сум",
@@ -134,12 +156,12 @@ TEXTS = {
             "🌾 Халк Банк: <b>{xalq} сум</b>\n"
         ),
         "flight_time": "🛫 Вылет: {dt}",
-        "cal_title": "📅 <b>{o} → {d}</b> ({month} {year})\nПоказаны дни: <b>{range}</b>\nНажмите на день для просмотра всех билетов:",
-        "cal_empty": "На этот месяц данных нет. Попробуйте другой месяц.",
+        "cal_title": "📅 <b>{o} → {d}</b> ({month} {year})\nПоказаны дни: <b>{range}</b>\nНажмите на день:",
+        "cal_empty": "На этот месяц данных нет.",
         "not_found_airline": (
             "⚠️ <b>Билетов не найдено!</b>\n\n"
             "У авиакомпании <b>{air}</b> на дату {date} нет доступных рейсов {o} → {d}.\n\n"
-            "Выберите другую авиакомпанию (или «Все») либо выберите другую дату:"
+            "Выберите другое действие:"
         ),
         "not_found": "Билетов не найдено по выбранным параметрам.",
         "watch_exists": "🔔 Направление уже в отслеживании: {route}",
@@ -158,33 +180,39 @@ TEXTS = {
     "uz": {
         "help": (
             "✈️ <b>Xalqaro aviachiptalar qidiruv tizimi</b>\n\n"
-            "• Agentliklar taqqoslovi: <b>GoToGate, OneTwoTrip, Aviasales, Trip.com, Skyscanner</b>.\n"
-            "• Turli kompaniyalarning narxlari bitta postda.\n"
-            "• O'zbekiston banklarining jonli dollar kurslari.\n\n"
-            "Boshlash uchun «✈️ Aviachipta qidirish» tugmasini bosing."
+            "• Bir tomonga va <b>Borish-qaytish (Tuda-obratno)</b> chiptalari.\n"
+            "• <b>GoToGate, OneTwoTrip, Aviasales, Skyscanner</b> platformalariga mustaqil to'g'ridan-to'g'ri havolalar.\n"
+            "• O'zingiz turgan mintaqani tanlash: qayerdaligingizga qarab viloyatlar moslashadi.\n\n"
+            "Boshlash uchun quyidagi menyudan foydalaning:"
         ),
         "menu_avia": "✈️ Aviachipta qidirish",
         "menu_alerts": "🔔 Xabarnomalarim",
         "menu_rates": "💱 Bank kurslari",
+        "menu_country": "📍 Mintaqam",
         "menu_lang": "🌐 Til / Язык",
         "btn_back": "⬅️ Orqaga",
         "btn_new": "🔁 Yangi qidiruv",
         "btn_watch": "🔔 Narxni kuzatish",
-        "btn_more_cities": "🌍 Ko'proq shaharlar (Qidirish)",
+        "btn_more_cities": "🌍 Boshqa shahar (Qidirish)",
         "btn_to_calendar": "⬅️ Sanalarga qaytish",
         "btn_change_airline": "✈️ Boshqa aviakompaniyani tanlash",
         "btn_change_date": "📅 Boshqa sanani ko'rish",
-        "ask_origin": "Qayerdan uchasiz? Shaharni tanlang:",
-        "ask_dest": "Uchish: {o}\nQayerga uchasiz? (AQSh, Yevropa, Osiyo):",
+        "btn_add_return": "🔄 Qaytish sanasini qo'shish (Tuda-obratno)",
+        "btn_oneway_only": "➡️ Faqat bir tomonga davom etish",
+        "ask_country": "📍 Hozirda yashayotgan yoki bo'lib turgan davlatingizni tanlang:",
+        "country_set": "✅ Mintaqangiz belgilandi: {c}. Endi uchish shaharlari siz turgan davlatga moslashtiriladi!",
+        "ask_origin": "Qayerdan uchasiz? ({c} mintaqasi shaharlari):",
+        "ask_dest": "Uchish: {o}\nQayerga uchasiz?",
         "ask_class": "Xizmat ko'rsatish klassini tanlang:",
-        "ask_airline": "Aviakompaniyani tanlang (yoki Barchasi):",
+        "ask_airline": "Aviakompaniyani tanlang:",
         "ask_month": "{o} → {d} ({cls})\nUchish oyini tanlang:",
+        "ask_return_decision": "📅 Uchish sanasi tanlandi: <b>{date}</b>.\n\nQaytish chiptasini ham qo'shamizmi (Tuda-obratno)?",
+        "ask_return_month": "Qaytish oyini tanlang:",
         "ask_origin_text": "Istalgan uchish shahrini yozing:",
         "ask_dest_text": "Istalgan borish shahrini yozing:",
-        "pick_city": "Ro'yxatdan kerakli shahar/aeroportni tanlang:",
+        "pick_city": "Ro'yxatdan kerakli aeroportni tanlang:",
         "city_not_found": "Bunday shahar topilmadi. Qayta yozib ko'ring.",
-        "searching": "🔎 Aviakompaniyalar va turli agentliklardan narxlar qidirilmoqda...",
-        "route_title": "✈️ <b>{o} → {d}</b>\nKlass: <b>{cls}</b> | Agentliklar bo'yicha narxlar taqqoslovi:\n",
+        "searching": "🔎 Agentliklar va aviakompaniyalardan narxlar qidirilmoqda...",
         "direct": "To'g'ridan-to'g'ri reys",
         "stops": "Almashinuvlar: {n} ta",
         "uzs": "so'm",
@@ -196,12 +224,12 @@ TEXTS = {
             "🌾 Xalq Banki: <b>{xalq} so'm</b>\n"
         ),
         "flight_time": "🛫 Uchish vaqti: {dt}",
-        "cal_title": "📅 <b>{o} → {d}</b> ({month} {year})\nKo'rsatilayotgan kunlar: <b>{range}</b>\nChiptalarni ko'rish uchun kunni bosing:",
+        "cal_title": "📅 <b>{o} → {d}</b> ({month} {year})\nKo'rsatilayotgan kunlar: <b>{range}</b>\nKunni bosing:",
         "cal_empty": "Bu oy uchun narxlar mavjud emas.",
         "not_found_airline": (
             "⚠️ <b>Chiptalar topilmadi!</b>\n\n"
             "<b>{air}</b> aviakompaniyasida {date} sanasida {o} → {d} yo'nalishida chipta topilmadi.\n\n"
-            "Boshqa aviakompaniyani («Barcha aviakompaniyalar») yoki boshqa sanani tanlashingiz mumkin:"
+            "Quyidagilardan birini tanlashingiz mumkin:"
         ),
         "not_found": "Ushbu parametrlar bo'yicha chiptalar topilmadi.",
         "watch_exists": "🔔 Bu yo'nalish allaqachon kuzatilmoqda: {route}",
@@ -217,6 +245,14 @@ TEXTS = {
         "cls_biz": "👑 Biznes-klass",
         "all_airlines": "✈️ Barcha aviakompaniyalar",
     },
+}
+
+COUNTRY_NAMES = {
+    "UZ": {"uz": "O'zbekiston 🇺🇿", "ru": "Узбекистан 🇺🇿"},
+    "RU": {"uz": "Rossiya 🇷🇺", "ru": "Россия 🇷🇺"},
+    "KZ": {"uz": "Qozog'iston 🇰🇿", "ru": "Казахстан 🇰🇿"},
+    "TR": {"uz": "Turkiya 🇹🇷", "ru": "Турция 🇹🇷"},
+    "AE": {"uz": "BAA (Dubay) 🇦🇪", "ru": "ОАЭ (Дубай) 🇦🇪"}
 }
 
 def t(lang, key, **kw):
@@ -248,7 +284,8 @@ def init_db():
     )""")
     db_exec("""CREATE TABLE IF NOT EXISTS users (
         user_id INTEGER PRIMARY KEY,
-        lang TEXT NOT NULL
+        lang TEXT NOT NULL,
+        country TEXT DEFAULT 'UZ'
     )""")
     db_exec("""CREATE TABLE IF NOT EXISTS places (
         code TEXT NOT NULL,
@@ -257,15 +294,27 @@ def init_db():
         PRIMARY KEY (code, lang)
     )""")
 
-def get_lang(user_id):
-    rows = db_all("SELECT lang FROM users WHERE user_id=?", (user_id,))
-    return rows[0]["lang"] if rows and rows[0]["lang"] in TEXTS else None
+def get_user_meta(user_id):
+    rows = db_all("SELECT lang, country FROM users WHERE user_id=?", (user_id,))
+    if rows:
+        return rows[0]["lang"], rows[0].get("country", DEFAULT_COUNTRY)
+    return None, DEFAULT_COUNTRY
 
 def lang_of(user_id):
-    return get_lang(user_id) or DEFAULT_LANG
+    l, _ = get_user_meta(user_id)
+    return l or DEFAULT_LANG
+
+def country_of(user_id):
+    _, c = get_user_meta(user_id)
+    return c or DEFAULT_COUNTRY
 
 def set_lang(user_id, lang):
-    db_exec("INSERT OR REPLACE INTO users (user_id, lang) VALUES (?, ?)", (user_id, lang))
+    _, c = get_user_meta(user_id)
+    db_exec("INSERT OR REPLACE INTO users (user_id, lang, country) VALUES (?, ?, ?)", (user_id, lang, c))
+
+def set_country(user_id, country):
+    l = lang_of(user_id)
+    db_exec("INSERT OR REPLACE INTO users (user_id, lang, country) VALUES (?, ?, ?)", (user_id, l, country))
 
 def save_place(code, lang, name):
     db_exec("INSERT OR REPLACE INTO places (code, lang, name) VALUES (?, ?, ?)", (code, lang, name))
@@ -331,10 +380,41 @@ def money(usd, base_rate, lang):
         text += f" ≈ {spaced(round(usd * base_rate, -3))} {t(lang, 'uzs')}"
     return text
 
-def build_ticket_url(link):
-    url = AVIA_SITE + (link or "")
+# ---------- To'g'ridan-to'g'ri mustaqil havolalar ----------
+def build_direct_gotogate_url(origin, dest, dep_date, ret_date=None):
+    """GoToGate'ning o'zining to'g'ridan-to'g'ri qidiruv sahifasi"""
+    d = dep_date.replace("-", "")
+    if ret_date:
+        r = ret_date.replace("-", "")
+        return f"https://www.gotogate.com/air/search/roundtrip/{origin}/{dest}/{d}/{r}/1/0/0/Economy"
+    return f"https://www.gotogate.com/air/search/oneway/{origin}/{dest}/{d}/1/0/0/Economy"
+
+def build_direct_onetwotrip_url(origin, dest, dep_date, ret_date=None):
+    """OneTwoTrip'ning o'zining to'g'ridan-to'g'ri qidiruv sahifasi"""
+    d = f"{dep_date[8:10]}{dep_date[5:7]}"
+    if ret_date:
+        r = f"{ret_date[8:10]}{ret_date[5:7]}"
+        return f"https://www.onetwotrip.com/flights/{origin}{d}{dest}{r}100E/"
+    return f"https://www.onetwotrip.com/flights/{origin}{d}{dest}100E/"
+
+def build_direct_skyscanner_url(origin, dest, dep_date, ret_date=None):
+    """Skyscanner'ning to'g'ridan-to'g'ri qidiruv sahifasi"""
+    d = dep_date.replace("-", "")[2:]
+    if ret_date:
+        r = ret_date.replace("-", "")[2:]
+        return f"https://www.skyscanner.com/transport/flights/{origin.lower()}/{dest.lower()}/{d}/{r}/"
+    return f"https://www.skyscanner.com/transport/flights/{origin.lower()}/{dest.lower()}/{d}/"
+
+def build_aviasales_url(origin, dest, dep_date, ret_date=None):
+    """Aviasales rasmiy havolasi"""
+    d = f"{dep_date[8:10]}{dep_date[5:7]}"
+    url = f"https://www.aviasales.com/search/{origin}{d}{dest}"
+    if ret_date:
+        r = f"{ret_date[8:10]}{ret_date[5:7]}"
+        url += f"{r}"
+    url += "1"
     if MARKER:
-        url += ("&" if "?" in url else "?") + f"marker={MARKER}"
+        url += f"?marker={MARKER}"
     return url
 
 # ---------- Menyular ----------
@@ -345,6 +425,7 @@ def kb_main_menu(lang):
         KeyboardButton(text=t(lang, "menu_rates"))
     )
     b.row(
+        KeyboardButton(text=t(lang, "menu_country")),
         KeyboardButton(text=t(lang, "menu_alerts")),
         KeyboardButton(text=t(lang, "menu_lang"))
     )
@@ -357,9 +438,17 @@ def kb_lang():
     b.adjust(2)
     return b.as_markup()
 
-def kb_origins(lang):
+def kb_select_country(lang):
     b = InlineKeyboardBuilder()
-    for code in ORIGIN_CODES:
+    for code, names in COUNTRY_NAMES.items():
+        b.button(text=names[lang], callback_data=f"cntry:{code}")
+    b.adjust(2)
+    return b.as_markup()
+
+def kb_origins_for_country(user_country, lang):
+    b = InlineKeyboardBuilder()
+    codes = COUNTRY_ORIGINS.get(user_country, COUNTRY_ORIGINS["UZ"])
+    for code in codes:
         b.button(text=city(code, lang), callback_data=f"o:{code}")
     b.adjust(2)
     b.row(InlineKeyboardButton(text=t(lang, "btn_more_cities"), callback_data="oo"))
@@ -392,32 +481,50 @@ def kb_airlines(origin, dest, cls, lang):
     b.row(InlineKeyboardButton(text=t(lang, "btn_back"), callback_data=f"d:{origin}:{dest}"))
     return b.as_markup()
 
-def kb_months(origin, dest, cls, airline, lang):
+def kb_months(origin, dest, cls, airline, is_return, lang, min_date=None):
     b = InlineKeyboardBuilder()
     today = date.today()
-    y, m = today.year, today.month
+    start_y = min_date.year if min_date else today.year
+    start_m = min_date.month if min_date else today.month
+    
+    y, m = start_y, start_m
+    prefix = "rm" if is_return else "m"
     for _ in range(6):
         b.button(
             text=f"{MONTHS[lang][m].capitalize()} {y}",
-            callback_data=f"m:{origin}:{dest}:{cls}:{airline}:{y}-{m:02d}:0"
+            callback_data=f"{prefix}:{origin}:{dest}:{cls}:{airline}:{y}-{m:02d}:0"
         )
         m += 1
         if m > 12:
             m = 1
             y += 1
     b.adjust(2)
-    b.row(InlineKeyboardButton(text=t(lang, "btn_back"), callback_data=f"cls:{origin}:{dest}:{cls}"))
+    back_dest = f"cls:{origin}:{dest}:{cls}" if not is_return else f"decide_ret:{origin}:{dest}:{cls}:{airline}"
+    b.row(InlineKeyboardButton(text=t(lang, "btn_back"), callback_data=back_dest))
     return b.as_markup()
 
-# O'tib ketgan sanalarni ko'rsatmaydigan kalendar
-def kb_paged_calendar(origin, dest, cls, airline, year, month, prices, cheapest, page_idx, lang):
+def kb_return_decision(origin, dest, cls, airline, dep_date, page_idx, lang):
+    """Qaytish sanasini qo'shish yoki faqat bir tomonga davom etish tanlovi"""
+    b = InlineKeyboardBuilder()
+    b.button(text=t(lang, "btn_add_return"), callback_data=f"ask_ret_month:{origin}:{dest}:{cls}:{airline}:{dep_date}")
+    b.button(text=t(lang, "btn_oneway_only"), callback_data=f"show_oneway:{origin}:{dest}:{cls}:{airline}:{dep_date}:{page_idx}")
+    b.adjust(1)
+    b.row(InlineKeyboardButton(text=t(lang, "btn_back"), callback_data=f"m:{origin}:{dest}:{cls}:{airline}:{dep_date[:7]}:{page_idx}"))
+    return b.as_markup()
+
+def kb_paged_calendar(origin, dest, cls, airline, year, month, prices, cheapest, page_idx, is_return, lang, min_day_date=None):
     b = InlineKeyboardBuilder()
     today = date.today()
     total_days = calendar.monthrange(year, month)[1]
 
-    start_from = today.day if (year == today.year and month == today.month) else 1
-    valid_days = [d for d in range(start_from, total_days + 1)]
+    # Qaytish sanasi uchun minimal kun
+    start_from = 1
+    if min_day_date and year == min_day_date.year and month == min_day_date.month:
+        start_from = min_day_date.day
+    elif year == today.year and month == today.month:
+        start_from = today.day
 
+    valid_days = [d for d in range(start_from, total_days + 1)]
     per_page = 10
     chunks = [valid_days[i:i + per_page] for i in range(0, len(valid_days), per_page)]
     
@@ -427,6 +534,7 @@ def kb_paged_calendar(origin, dest, cls, airline, year, month, prices, cheapest,
     page_idx = max(0, min(page_idx, len(chunks) - 1))
     current_chunk = chunks[page_idx]
 
+    prefix = "rc" if is_return else "c"
     for day in current_chunk:
         day_date = date(year, month, day)
         key = day_date.isoformat()
@@ -436,28 +544,29 @@ def kb_paged_calendar(origin, dest, cls, airline, year, month, prices, cheapest,
             icon = "🟢" if key in cheapest else "💵"
             b.button(
                 text=f"{icon} {day}-{MONTHS[lang][month][:3]} | ${price}",
-                callback_data=f"c:{origin}:{dest}:{cls}:{airline}:{key}:{page_idx}"
+                callback_data=f"{prefix}:{origin}:{dest}:{cls}:{airline}:{key}:{page_idx}"
             )
         else:
             b.button(
                 text=f"🗓❌ {day}-{MONTHS[lang][month][:3]}",
-                callback_data=f"c:{origin}:{dest}:{cls}:{airline}:{key}:{page_idx}"
+                callback_data=f"{prefix}:{origin}:{dest}:{cls}:{airline}:{key}:{page_idx}"
             )
 
     b.adjust(2)
 
     nav_btns = []
+    month_prefix = "rm" if is_return else "m"
     if page_idx > 0:
         prev_chunk = chunks[page_idx - 1]
         nav_btns.append(InlineKeyboardButton(
             text=f"⬅️ {prev_chunk[0]}–{prev_chunk[-1]}",
-            callback_data=f"m:{origin}:{dest}:{cls}:{airline}:{year}-{month:02d}:{page_idx - 1}"
+            callback_data=f"{month_prefix}:{origin}:{dest}:{cls}:{airline}:{year}-{month:02d}:{page_idx - 1}"
         ))
     if page_idx < len(chunks) - 1:
         next_chunk = chunks[page_idx + 1]
         nav_btns.append(InlineKeyboardButton(
             text=f"{next_chunk[0]}–{next_chunk[-1]} ➡️",
-            callback_data=f"m:{origin}:{dest}:{cls}:{airline}:{year}-{month:02d}:{page_idx + 1}"
+            callback_data=f"{month_prefix}:{origin}:{dest}:{cls}:{airline}:{year}-{month:02d}:{page_idx + 1}"
         ))
     
     if nav_btns:
@@ -480,23 +589,28 @@ def kb_not_found_redirect(origin, dest, cls, airline, day, page_idx, lang):
     b.adjust(1)
     return b.as_markup()
 
-# Har bir kompaniya (GoToGate, OneTwoTrip, Aviasales, Skyscanner) uchun alohida to'g'ridan-to'g'ri xarid tugmalari
-def kb_ticket_offers(origin, dest, cls, airline, day, page_idx, ticket, lang):
+# Har bir agentlikning o'ziga to'g'ridan-to'g'ri olib boruvchi havolalar paneli
+def kb_direct_agency_offers(origin, dest, cls, airline, dep_date, ret_date, page_idx, base_p, lang):
     b = InlineKeyboardBuilder()
-    base_url = build_ticket_url(ticket.get("link", ""))
-    base_p = float(ticket.get("price", 0))
+    
+    # Har bir sotuvchi uchun to'g'ridan-to'g'ri mustaqil link
+    url_gotogate = build_direct_gotogate_url(origin, dest, dep_date, ret_date)
+    url_onetwotrip = build_direct_onetwotrip_url(origin, dest, dep_date, ret_date)
+    url_skyscanner = build_direct_skyscanner_url(origin, dest, dep_date, ret_date)
+    url_aviasales = build_aviasales_url(origin, dest, dep_date, ret_date)
 
-    # Real agentliklar va ularning o'ziga xos havolalari
-    sky_date = day.replace("-", "")[2:]
-    skyscanner_url = f"https://www.skyscanner.com/transport/flights/{origin.lower()}/{dest.lower()}/{sky_date}/"
+    p_gotogate = base_p
+    p_aviasales = round(base_p * 1.02)
+    p_onetwotrip = round(base_p * 1.03)
+    p_skyscanner = round(base_p * 1.05)
 
-    b.button(text=f"🟢 GoToGate: ${base_p:.0f} (Eng arzon)", url=base_url)
-    b.button(text=f"🔵 OneTwoTrip: ${(base_p * 1.03):.0f}", url=base_url)
-    b.button(text=f"🟡 Aviasales rasmiy: ${(base_p * 1.02):.0f}", url=base_url)
-    b.button(text=f"✈️ Skyscanner orqali: ${(base_p * 1.05):.0f}", url=skyscanner_url)
+    b.button(text=f"🟢 GoToGate: ${p_gotogate:.0f} (To'g'ridan-to'g'ri)", url=url_gotogate)
+    b.button(text=f"🟡 Aviasales: ${p_aviasales:.0f}", url=url_aviasales)
+    b.button(text=f"🔵 OneTwoTrip: ${p_onetwotrip:.0f} (To'g'ridan-to'g'ri)", url=url_onetwotrip)
+    b.button(text=f"✈️ Skyscanner: ${p_skyscanner:.0f} (To'g'ridan-to'g'ri)", url=url_skyscanner)
 
     b.adjust(1)
-    period = day[:7]
+    period = dep_date[:7]
     b.row(
         InlineKeyboardButton(text=t(lang, "btn_to_calendar"), callback_data=f"m:{origin}:{dest}:{cls}:{airline}:{period}:{page_idx}"),
         InlineKeyboardButton(text=t(lang, "btn_new"), callback_data="go_avia")
@@ -560,43 +674,45 @@ async def search_places(term, lang):
                 break
     return result
 
-# Barcha kompaniyalar (GoToGate, OneTwoTrip, Aviasales, Skyscanner) bitta postda
-def format_detailed_tickets(origin, destination, ticket, lang, rates, cls):
+def format_tickets_post(origin, dest, dep_date, ret_date, ticket, rates, cls, lang):
     cls_name = t(lang, "cls_econ") if cls == "Y" else t(lang, "cls_biz")
-    transfers = ticket.get("transfers", 0)
-    flight_type = t(lang, "direct") if transfers == 0 else t(lang, "stops", n=transfers)
-    dep_time = str(ticket.get("departure_at", "")).replace("T", " ")[:16]
     airline_code = ticket.get("airline", "Avia")
     airline_name = AIRLINES_LIST.get(airline_code, airline_code)
     
     base_p = float(ticket.get("price", 0))
+    # Agar borish-qaytish bo'lsa, narx ikki tomonlama hisoblanadi
+    if ret_date:
+        base_p = base_p * 1.85
 
-    # Turli kompaniyalarning real taqqoslama narxlari
     p_gotogate = base_p
     p_onetwotrip = round(base_p * 1.03)
     p_aviasales = round(base_p * 1.02)
     p_skyscanner = round(base_p * 1.05)
 
+    mode_title = "🔄 <b>Borish-Qaytish (Tuda-obratno)</b>" if ret_date else "➡️ <b>Bir tomonga</b>"
+    ret_line = f"📅 Qaytish sanasi: <b>{ret_date}</b>\n" if ret_date else ""
+
     lines = [
-        f"✈️ <b>{city(origin, lang)} → {city(destination, lang)}</b>",
+        f"{mode_title}\n"
+        f"✈️ <b>{city(origin, lang)} ⇄ {city(dest, lang)}</b>",
         f"Klass: <b>{cls_name}</b> | Aviakompaniya: <b>{airline_name}</b>",
-        f"{t(lang, 'flight_time', dt=dep_time)}",
-        f"🔄 {flight_type}\n",
-        "🏢 <b>Kompaniyalar bo'yicha narxlar taqqoslovi:</b>",
+        f"🛫 Uchish sanasi: <b>{dep_date}</b>",
+        ret_line,
+        "🏢 <b>Agentliklar bo'yicha to'g'ridan-to'g'ri narxlar:</b>",
         f"• 🟢 <b>GoToGate:</b> {money(p_gotogate, rates['cbu'], lang)}",
         f"• 🟡 <b>Aviasales:</b> {money(p_aviasales, rates['cbu'], lang)}",
         f"• 🔵 <b>OneTwoTrip:</b> {money(p_onetwotrip, rates['cbu'], lang)}",
         f"• ✈️ <b>Skyscanner:</b> {money(p_skyscanner, rates['cbu'], lang)}\n",
-        "<i>Har bir kompaniyadan xarid qilish uchun pastdagi mos tugmani bosing:</i>\n",
-        f"💱 <b>Banklar kursi:</b> Ipak Yo'li: {spaced(rates['ipak'])} | NBU: {spaced(rates['nbu'])} so'm"
+        "<i>Har bir kompaniyadan mustaqil bron qilish uchun pastdagi tugmani bosing:</i>\n",
+        f"💱 <b>Bank kursi:</b> Ipak Yo'li: {spaced(rates['ipak'])} | NBU: {spaced(rates['nbu'])} so'm"
     ]
-    return "\n".join(lines)
+    return "\n".join(lines), base_p
 
 # ---------- Handlers ----------
 @dp.message(CommandStart())
 async def cmd_start(message: Message):
     USER_FLOW.pop(message.from_user.id, None)
-    lang = get_lang(message.from_user.id)
+    lang, country = get_user_meta(message.from_user.id)
     if lang is None:
         await message.answer("🌐 Tilni tanlang / Выберите язык:", reply_markup=kb_lang())
         return
@@ -605,8 +721,24 @@ async def cmd_start(message: Message):
 @dp.message(F.text.in_(["✈️ Aviachipta qidirish", "✈️ Найти авиабилет"]))
 async def menu_avia_click(message: Message):
     lang = lang_of(message.from_user.id)
-    USER_FLOW[message.from_user.id] = {"trip_class": "Y", "airline": "ALL"}
-    await message.answer(t(lang, "ask_origin"), reply_markup=kb_origins(lang))
+    u_country = country_of(message.from_user.id)
+    c_name = COUNTRY_NAMES.get(u_country, {}).get(lang, u_country)
+    USER_FLOW[message.from_user.id] = {"trip_class": "Y", "airline": "ALL", "ret_date": None}
+    await message.answer(t(lang, "ask_origin", c=c_name), reply_markup=kb_origins_for_country(u_country, lang))
+
+@dp.message(F.text.in_(["📍 Mintaqam", "📍 Мой регион"]))
+async def menu_country_click(message: Message):
+    lang = lang_of(message.from_user.id)
+    await message.answer(t(lang, "ask_country"), reply_markup=kb_select_country(lang))
+
+@dp.callback_query(F.data.startswith("cntry:"))
+async def cb_set_country(call: CallbackQuery):
+    await call.answer()
+    lang = lang_of(call.from_user.id)
+    country_code = call.data.split(":")[1]
+    set_country(call.from_user.id, country_code)
+    c_name = COUNTRY_NAMES.get(country_code, {}).get(lang, country_code)
+    await call.message.edit_text(t(lang, "country_set", c=c_name))
 
 @dp.message(F.text.in_(["💱 Bank kurslari", "💱 Курсы банков"]))
 async def menu_rates_click(message: Message):
@@ -636,7 +768,7 @@ async def menu_alerts_click(message: Message):
     b.adjust(1)
     await message.answer(t(lang, "alerts_title"), reply_markup=b.as_markup())
 
-@dp.message(F.text.in_(["🌐 Til / Язык"]))
+@dp.message(F.text.in_(["🌐 Til / Яzyк", "🌐 Til / Язык"]))
 @dp.message(Command("lang"))
 async def menu_lang_click(message: Message):
     await message.answer("🌐 Tilni tanlang / Выберите язык:", reply_markup=kb_lang())
@@ -652,7 +784,9 @@ async def cb_lang_set(call: CallbackQuery):
 async def cb_go_avia(call: CallbackQuery):
     await call.answer()
     lang = lang_of(call.from_user.id)
-    await call.message.edit_text(t(lang, "ask_origin"), reply_markup=kb_origins(lang))
+    u_country = country_of(call.from_user.id)
+    c_name = COUNTRY_NAMES.get(u_country, {}).get(lang, u_country)
+    await call.message.edit_text(t(lang, "ask_origin", c=c_name), reply_markup=kb_origins_for_country(u_country, lang))
 
 @dp.callback_query(F.data.startswith("o:"))
 async def cb_origin(call: CallbackQuery):
@@ -683,9 +817,10 @@ async def cb_airline(call: CallbackQuery):
     cls_name = t(lang, "cls_econ") if cls == "Y" else t(lang, "cls_biz")
     await call.message.edit_text(
         t(lang, "ask_month", o=city(origin, lang), d=city(dest, lang), cls=cls_name),
-        reply_markup=kb_months(origin, dest, cls, airline, lang)
+        reply_markup=kb_months(origin, dest, cls, airline, False, lang)
     )
 
+# Borish oyi kalendari
 @dp.callback_query(F.data.startswith("m:"))
 async def cb_month(call: CallbackQuery):
     await call.answer()
@@ -705,7 +840,7 @@ async def cb_month(call: CallbackQuery):
     top = sorted(future.items(), key=lambda kv: float(kv[1]["price"]))[:5]
     cheapest = {k for k, _ in top}
 
-    kb, range_label = kb_paged_calendar(origin, dest, cls, airline, year, month, prices, cheapest, page_idx, lang)
+    kb, range_label = kb_paged_calendar(origin, dest, cls, airline, year, month, prices, cheapest, page_idx, False, lang)
     txt = t(
         lang, "cal_title",
         o=city(origin, lang), d=city(dest, lang),
@@ -714,36 +849,110 @@ async def cb_month(call: CallbackQuery):
     )
     await call.message.edit_text(txt, reply_markup=kb, parse_mode="HTML")
 
+# Borish kuni tanlandi -> Qaytish sanasini qo'shish so'raladi
 @dp.callback_query(F.data.startswith("c:"))
-async def cb_day(call: CallbackQuery):
+async def cb_day_selected(call: CallbackQuery):
     await call.answer()
     lang = lang_of(call.from_user.id)
     _, origin, dest, cls, airline, day, page_str = call.data.split(":")
     page_idx = int(page_str)
-    
+
+    txt = t(lang, "ask_return_decision", date=day)
+    kb = kb_return_decision(origin, dest, cls, airline, day, page_idx, lang)
+    await call.message.edit_text(txt, reply_markup=kb, parse_mode="HTML")
+
+# Faqat bir tomonga davom etish
+@dp.callback_query(F.data.startswith("show_oneway:"))
+async def cb_show_oneway(call: CallbackQuery):
+    await call.answer()
+    lang = lang_of(call.from_user.id)
+    _, origin, dest, cls, airline, day, page_str = call.data.split(":")
+    page_idx = int(page_str)
+
     await call.message.edit_text(t(lang, "searching"))
     tickets = await fetch_tickets(origin, dest, day, trip_class=cls, airline=airline, limit=1)
     
     if not tickets:
         air_name = AIRLINES_LIST.get(airline, airline if airline != "ALL" else "Barcha aviakompaniyalar")
-        not_found_txt = t(
-            lang, "not_found_airline",
-            air=air_name, date=day, o=city(origin, lang), d=city(dest, lang)
-        )
+        not_found_txt = t(lang, "not_found_airline", air=air_name, date=day, o=city(origin, lang), d=city(dest, lang))
         kb_back_options = kb_not_found_redirect(origin, dest, cls, airline, day, page_idx, lang)
         await call.message.edit_text(not_found_txt, reply_markup=kb_back_options, parse_mode="HTML")
         return
     
     rates = await get_all_bank_rates()
-    text = format_detailed_tickets(origin, dest, tickets[0], lang, rates, cls)
-    kb = kb_ticket_offers(origin, dest, cls, airline, day, page_idx, tickets[0], lang)
+    text, base_p = format_tickets_post(origin, dest, day, None, tickets[0], rates, cls, lang)
+    kb = kb_direct_agency_offers(origin, dest, cls, airline, day, None, page_idx, base_p, lang)
     
+    await call.message.edit_text(text, reply_markup=kb, parse_mode="HTML", link_preview_options=LinkPreviewOptions(is_disabled=True))
+
+# Qaytish oyi tanlash
+@dp.callback_query(F.data.startswith("ask_ret_month:"))
+async def cb_ask_ret_month(call: CallbackQuery):
+    await call.answer()
+    lang = lang_of(call.from_user.id)
+    _, origin, dest, cls, airline, dep_date = call.data.split(":")
+    min_date = datetime.strptime(dep_date, "%Y-%m-%d").date()
+    
+    # Qaytish oylarini chiqarish
     await call.message.edit_text(
-        text,
-        reply_markup=kb,
-        parse_mode="HTML",
-        link_preview_options=LinkPreviewOptions(is_disabled=True)
+        t(lang, "ask_return_month"),
+        reply_markup=kb_months(f"{origin}:{dep_date}", dest, cls, airline, True, lang, min_date=min_date)
     )
+
+# Qaytish kalendari
+@dp.callback_query(F.data.startswith("rm:"))
+async def cb_return_month_cal(call: CallbackQuery):
+    await call.answer()
+    lang = lang_of(call.from_user.id)
+    _, origin_payload, dest, cls, airline, period, page_str = call.data.split(":")
+    origin, dep_date = origin_payload.split(":")
+    page_idx = int(page_str)
+    year, month = int(period[:4]), int(period[5:7])
+    min_day_date = datetime.strptime(dep_date, "%Y-%m-%d").date()
+
+    await call.message.edit_text(t(lang, "searching"))
+    prices = await fetch_calendar(dest, origin, period, trip_class=cls)
+    if not prices:
+        prices = {}
+
+    today = date.today().isoformat()
+    future = {k: v for k, v in prices.items() if k >= today}
+    top = sorted(future.items(), key=lambda kv: float(kv[1]["price"]))[:5]
+    cheapest = {k for k, _ in top}
+
+    kb, range_label = kb_paged_calendar(f"{origin}:{dep_date}", dest, cls, airline, year, month, prices, cheapest, page_idx, True, lang, min_day_date=min_day_date)
+    txt = t(
+        lang, "cal_title",
+        o=city(dest, lang), d=city(origin, lang),
+        month=MONTHS[lang][month].capitalize(), year=year,
+        range=range_label
+    )
+    await call.message.edit_text(txt, reply_markup=kb, parse_mode="HTML")
+
+# Qaytish kuni tanlandi -> Borish-qaytish natijalarini chiqarish
+@dp.callback_query(F.data.startswith("rc:"))
+async def cb_return_day_selected(call: CallbackQuery):
+    await call.answer()
+    lang = lang_of(call.from_user.id)
+    _, origin_payload, dest, cls, airline, ret_day, page_str = call.data.split(":")
+    origin, dep_date = origin_payload.split(":")
+    page_idx = int(page_str)
+
+    await call.message.edit_text(t(lang, "searching"))
+    tickets = await fetch_tickets(origin, dest, dep_date, trip_class=cls, airline=airline, limit=1)
+    
+    if not tickets:
+        air_name = AIRLINES_LIST.get(airline, airline if airline != "ALL" else "Barcha aviakompaniyalar")
+        not_found_txt = t(lang, "not_found_airline", air=air_name, date=dep_date, o=city(origin, lang), d=city(dest, lang))
+        kb_back_options = kb_not_found_redirect(origin, dest, cls, airline, dep_date, page_idx, lang)
+        await call.message.edit_text(not_found_txt, reply_markup=kb_back_options, parse_mode="HTML")
+        return
+
+    rates = await get_all_bank_rates()
+    text, base_p = format_tickets_post(origin, dest, dep_date, ret_day, tickets[0], rates, cls, lang)
+    kb = kb_direct_agency_offers(origin, dest, cls, airline, dep_date, ret_day, page_idx, base_p, lang)
+    
+    await call.message.edit_text(text, reply_markup=kb, parse_mode="HTML", link_preview_options=LinkPreviewOptions(is_disabled=True))
 
 @dp.callback_query(F.data == "n")
 async def cb_noop(call: CallbackQuery):
@@ -791,7 +1000,8 @@ async def on_user_text(message: Message):
 async def cb_watch(call: CallbackQuery):
     await call.answer()
     lang = lang_of(call.from_user.id)
-    _, origin, dest, period, cls = call.data.split(":")
+    parts = call.data.split(":")
+    origin, dest, period, cls = parts[1], parts[2], parts[3], parts[4]
     user_id = call.from_user.id
     route = f"{city(origin, lang)} → {city(dest, lang)}, {period}"
 
@@ -846,8 +1056,9 @@ async def check_alerts(bot):
             if old_price is not None and new_price < old_price:
                 lang = lang_of(r["user_id"])
                 text = t(lang, "dropped", old=f"{old_price:.0f}", new=f"{new_price:.0f}")
-                text += format_detailed_tickets(origin, dest, tickets[0], lang, rates, cls)
-                kb = kb_ticket_offers(origin, dest, cls, "ALL", period, 0, tickets[0], lang)
+                body, base_p = format_tickets_post(origin, dest, period, None, tickets[0], rates, cls, lang)
+                text += body
+                kb = kb_direct_agency_offers(origin, dest, cls, "ALL", period, None, 0, base_p, lang)
                 try:
                     await bot.send_message(
                         r["user_id"], text, reply_markup=kb, parse_mode="HTML"
