@@ -45,6 +45,7 @@ dp = Dispatcher()
 
 USER_FLOW = {}
 
+# Mintaqalar bo'yicha aeroportlar
 COUNTRY_ORIGINS = {
     "UZ": ["TAS", "SKD", "BHK", "FEG", "NMA", "AZN", "UGC", "NCU", "TMJ", "KSQ"],
     "RU": ["MOW", "LED", "KZN", "OVB", "SVX", "AER", "ROV", "UFA", "KRR", "MRV"],
@@ -58,34 +59,35 @@ DEST_CODES = [
     "IST", "AYT", "DXB", "JED", "MOW", "LED", "ALA", "TBS", "BAK"
 ]
 
+# Shaharlar va aeroportlar yoniga rasmiy davlat bayroqlari
 CITY = {
     "ru": {
-        "TAS": "Ташкент", "SKD": "Самарканд", "BHK": "Бухара", "FEG": "Фергана",
-        "NMA": "Наманган", "AZN": "Андижан", "UGC": "Ургенч", "NCU": "Нукус",
-        "TMJ": "Термез", "KSQ": "Карши",
-        "MOW": "Москва", "LED": "Санкт-Петербург", "KZN": "Казань", "OVB": "Новосибирск",
-        "SVX": "Екатеринбург", "AER": "Сочи", "ROV": "Ростов", "UFA": "Уфа", "KRR": "Краснодар", "MRV": "Минводы",
-        "ALA": "Алматы", "NQZ": "Астана", "CIT": "Шымкент", "GUW": "Атырау", "SCO": "Актау", "AKX": "Актобе",
-        "SAW": "Стамбул (Сабиха)", "ESB": "Анкара", "ADB": "Измир", "DLM": "Даламан",
-        "AUH": "Абу-Даби", "SHJ": "Шарджа",
-        "NYC": "Нью-Йорк", "LON": "Лондон", "PAR": "Париж", "BER": "Берлин",
-        "FRA": "Франкфурт", "ROM": "Рим", "PRG": "Прага", "WAW": "Варшава",
-        "VIE": "Вена", "MAD": "Мадрид", "IST": "Стамбул", "AYT": "Анталья",
-        "DXB": "Дубай", "JED": "Джидда", "TBS": "Тбилиси", "BAK": "Баку"
+        "TAS": "🇺🇿 Ташкент", "SKD": "🇺🇿 Самарканд", "BHK": "🇺🇿 Бухара", "FEG": "🇺🇿 Фергана",
+        "NMA": "🇺🇿 Наманган", "AZN": "🇺🇿 Андижан", "UGC": "🇺🇿 Ургенч", "NCU": "🇺🇿 Нукус",
+        "TMJ": "🇺🇿 Термез", "KSQ": "🇺🇿 Карши",
+        "MOW": "🇷🇺 Москва", "LED": "🇷🇺 Санкт-Петербург", "KZN": "🇷🇺 Казань", "OVB": "🇷🇺 Новосибирск",
+        "SVX": "🇷🇺 Екатеринбург", "AER": "🇷🇺 Сочи", "ROV": "🇷🇺 Ростов", "UFA": "🇷🇺 Уфа", "KRR": "🇷🇺 Краснодар", "MRV": "🇷🇺 Минводы",
+        "ALA": "🇰🇿 Алматы", "NQZ": "🇰🇿 Астана", "CIT": "🇰🇿 Шымкент", "GUW": "🇰🇿 Атырау", "SCO": "🇰🇿 Актау", "AKX": "🇰🇿 Актобе",
+        "SAW": "🇹🇷 Стамбул (Сабиха)", "ESB": "🇹🇷 Анкара", "ADB": "🇹🇷 Измир", "DLM": "🇹🇷 Даламан",
+        "AUH": "🇦🇪 Абу-Даби", "SHJ": "🇦🇪 Шарджа",
+        "NYC": "🇺🇸 Нью-Йорк", "LON": "🇬🇧 Лондон", "PAR": "🇫🇷 Париж", "BER": "🇩🇪 Берлин",
+        "FRA": "🇩🇪 Франкфурт", "ROM": "🇮🇹 Рим", "PRG": "🇨🇿 Прага", "WAW": "🇵🇱 Варшава",
+        "VIE": "🇦🇹 Вена", "MAD": "🇪🇸 Мадрид", "IST": "🇹🇷 Стамбул", "AYT": "🇹🇷 Анталья",
+        "DXB": "🇦🇪 Дубай", "JED": "🇸🇦 Джидда", "TBS": "🇬🇪 Тбилиси", "BAK": "🇦🇿 Баку"
     },
     "uz": {
-        "TAS": "Toshkent", "SKD": "Samarqand", "BHK": "Buxoro", "FEG": "Farg'ona",
-        "NMA": "Namangan", "AZN": "Andijon", "UGC": "Urganch", "NCU": "Nukus",
-        "TMJ": "Termiz", "KSQ": "Qarshi",
-        "MOW": "Moskva", "LED": "Sankt-Peterburg", "KZN": "Qozon", "OVB": "Novosibirsk",
-        "SVX": "Yekaterinburg", "AER": "Sochi", "ROV": "Rostov", "UFA": "Ufa", "KRR": "Krasnodar", "MRV": "Minvod",
-        "ALA": "Almati", "NQZ": "Ostona", "CIT": "Chimkent", "GUW": "Atirau", "SCO": "Aqtau", "AKX": "Aqtobe",
-        "SAW": "Istanbul (Sabiha)", "ESB": "Anqara", "ADB": "Izmir", "DLM": "Dalaman",
-        "AUH": "Abu-Dabi", "SHJ": "Sharja",
-        "NYC": "Nyu-York", "LON": "London", "PAR": "Parij", "BER": "Berlin",
-        "FRA": "Frankfurt", "ROM": "Rim", "PRG": "Praga", "WAW": "Varshava",
-        "VIE": "Vena", "MAD": "Madrid", "IST": "Istanbul", "AYT": "Antaliya",
-        "DXB": "Dubay", "JED": "Jidda", "TBS": "Tbilisi", "BAK": "Boku"
+        "TAS": "🇺🇿 Toshkent", "SKD": "🇺🇿 Samarqand", "BHK": "🇺🇿 Buxoro", "FEG": "🇺🇿 Farg'ona",
+        "NMA": "🇺🇿 Namangan", "AZN": "🇺🇿 Andijon", "UGC": "🇺🇿 Urganch", "NCU": "🇺🇿 Nukus",
+        "TMJ": "🇺🇿 Termiz", "KSQ": "🇺🇿 Qarshi",
+        "MOW": "🇷🇺 Moskva", "LED": "🇷🇺 Sankt-Peterburg", "KZN": "🇷🇺 Qozon", "OVB": "🇷🇺 Novosibirsk",
+        "SVX": "🇷🇺 Yekaterinburg", "AER": "🇷🇺 Sochi", "ROV": "🇷🇺 Rostov", "UFA": "🇷🇺 Ufa", "KRR": "🇷🇺 Krasnodar", "MRV": "🇷🇺 Minvod",
+        "ALA": "🇰🇿 Almati", "NQZ": "🇰🇿 Ostona", "CIT": "🇰🇿 Chimkent", "GUW": "🇰🇿 Atirau", "SCO": "🇰🇿 Aqtau", "AKX": "🇰🇿 Aqtobe",
+        "SAW": "🇹🇷 Istanbul (Sabiha)", "ESB": "🇹🇷 Anqara", "ADB": "🇹🇷 Izmir", "DLM": "🇹🇷 Dalaman",
+        "AUH": "🇦🇪 Abu-Dabi", "SHJ": "🇦🇪 Sharja",
+        "NYC": "🇺🇸 Nyu-York", "LON": "🇬🇧 London", "PAR": "🇫🇷 Parij", "BER": "🇩🇪 Berlin",
+        "FRA": "🇩🇪 Frankfurt", "ROM": "🇮🇹 Rim", "PRG": "🇨🇿 Praga", "WAW": "🇵🇱 Varshava",
+        "VIE": "🇦🇹 Vena", "MAD": "🇪🇸 Madrid", "IST": "🇹🇷 Istanbul", "AYT": "🇹🇷 Antaliya",
+        "DXB": "🇦🇪 Dubay", "JED": "🇸🇦 Jidda", "TBS": "🇬🇪 Tbilisi", "BAK": "🇦🇿 Boku"
     },
 }
 
@@ -113,8 +115,8 @@ TEXTS = {
         "help": (
             "✈️ <b>Международный поиск авиабилетов</b>\n\n"
             "• Рейсы в одну сторону и <b>Туда-обратно</b>.\n"
-            "• Прямые ссылки на покупку: <b>GoToGate, OneTwoTrip, Trip.com, Aviasales, Skyscanner</b>.\n"
-            "• Выбор домашнего региона: список вылетов адаптируется под вашу страну.\n\n"
+            "• Прямые ссылки на покупку: <b>GoToGate, Trip.com, OneTwoTrip, Aviasales, Skyscanner</b>.\n"
+            "• Выберите домашний регион: города подстроятся автоматически.\n\n"
             "Выберите пункт меню ниже:"
         ),
         "menu_avia": "✈️ Найти авиабилет",
@@ -180,7 +182,7 @@ TEXTS = {
         "help": (
             "✈️ <b>Xalqaro aviachiptalar qidiruv tizimi</b>\n\n"
             "• Bir tomonga va <b>Borish-qaytish (Tuda-obratno)</b> chiptalari.\n"
-            "• <b>GoToGate, OneTwoTrip, Trip.com, Aviasales, Skyscanner</b> platformalariga to'g'ridan-to'g'ri havolalar.\n"
+            "• <b>GoToGate, Trip.com, OneTwoTrip, Aviasales, Skyscanner</b> platformalariga to'g'ridan-to'g'ri havolalar.\n"
             "• Yashash mintaqangizga moslashuvchi qulay qidiruv.\n\n"
             "Boshlash uchun quyidagi menyudan foydalaning:"
         ),
@@ -382,23 +384,16 @@ def money(usd, base_rate, lang):
 
 def build_direct_gotogate_url(origin, dest, dep_date, ret_date=None):
     """
-    GoToGate rasmiy xalqaro integratsiya shlyuzi orqali to'g'ridan-to'g'ri reyslar
-    natijasi sahifasini ochadi (bosh sahifaga tashlab yubormaydi).
+    GoToGate: Xalqaro to'g'ridan-to'g'ri reyslar sessiyasi shlyuzi.
+    Aniq sana va yo'nalish bo'yicha to'g'ridan-to'g'ri natijalar jadvalini ochadi.
     """
     if ret_date:
-        return (
-            f"https://www.gotogate.com/air/search/roundtrip/{origin}/{dest}/"
-            f"{dep_date}/{ret_date}/1/0/0/Economy"
-        )
-    return (
-        f"https://www.gotogate.com/air/search/oneway/{origin}/{dest}/"
-        f"{dep_date}/1/0/0/Economy"
-    )
+        return f"https://www.gotogate.com/rf/result?searchParams={origin}_{dest}_{dep_date}_{ret_date}_1_0_0_Economy"
+    return f"https://www.gotogate.com/rf/result?searchParams={origin}_{dest}_{dep_date}_1_0_0_Economy"
 
 def build_direct_trip_com_url(origin, dest, dep_date, ret_date=None):
     """
-    Trip.com platformasida aynan ko'rsatilgan aeroportlar, sanalar va reyslarni
-    to'g'ridan-to'g'ri qidiruvsiz yuklovchi rasmiy Deep Link formati.
+    Trip.com platformasida aniq ko'rsatilgan sanalar va reyslarni to'g'ridan-to'g'ri yuklovchi havola.
     """
     base = "https://www.trip.com/flights/showfarefirst"
     params = {
@@ -416,14 +411,19 @@ def build_direct_trip_com_url(origin, dest, dep_date, ret_date=None):
 
 def build_direct_onetwotrip_url(origin, dest, dep_date, ret_date=None):
     """
-    OneTwoTrip saytida to'g'ridan-to'g'ri reyslar jadvalini ochuvchi rasmiy format.
-    Format: flights/{ORIGIN}{DDMM}{DEST}{DDMM}100E/
+    OneTwoTrip: Qidiruvsiz to'g'ridan-to'g'ri tanlangan sanadagi reyslarni ochuvchi rasmiy veb-format.
+    Format: https://www.onetwotrip.com/flights/?from={origin}&to={dest}&date={dep_date}&cs=E
     """
-    d = datetime.strptime(dep_date, "%Y-%m-%d").strftime("%d%m")
+    params = {
+        "from": origin,
+        "to": dest,
+        "date": dep_date,
+        "cs": "E",
+        "ad": "1"
+    }
     if ret_date:
-        r = datetime.strptime(ret_date, "%Y-%m-%d").strftime("%d%m")
-        return f"https://www.onetwotrip.com/flights/{origin}{d}{dest}{r}100E/"
-    return f"https://www.onetwotrip.com/flights/{origin}{d}{dest}100E/"
+        params["returnDate"] = ret_date
+    return f"https://www.onetwotrip.com/flights/?{urllib.parse.urlencode(params)}"
 
 def build_direct_skyscanner_url(origin, dest, dep_date, ret_date=None):
     """
